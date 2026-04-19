@@ -73,10 +73,12 @@ Agreed with the user during brainstorming on 2026-04-19.
    trivial single-statement wrappers are excluded; the dlopen loader
    and error-string helpers stay in the gate because they are real
    logic. Integration tests exercise the excluded wrappers end-to-end.
-9. **Deferred tier (`lok_advanced` build tag):** `runMacro`, `signDocument`,
-   `insertCertificate`, `addCertificate`, `getSignatureState`. Tier-2
-   coverage: functions exist and handle errors, but end-to-end tests
-   only run when `LOK_TEST_CERTS` is set. Also called out in §1.
+9. **Deferred tier (`lok_advanced` build tag):** `runMacro`,
+   `signDocument`, `insertCertificate`, `addCertificate`,
+   `getSignatureState`. Tier-2 coverage: functions exist and handle
+   errors, but end-to-end tests only run when `LOK_TEST_CERTS` is set.
+   Also called out in §1. `trimMemory` is **not** deferred — it ships
+   with `Office` in Phase 2.
 
 ## 4. Package layout
 
@@ -166,12 +168,12 @@ docs/
 ### 5.2 Loader
 
 `internal/lokc` uses `dlopen(RTLD_LAZY|RTLD_LOCAL)` to open
-**`libsofficeapp.so`** inside the caller-supplied `program/` directory
-(fallback to `soffice.bin` on some distributions), resolves
-`libreofficekit_hook_2` via `dlsym` (falling back to
+**`libsofficeapp.so`** inside the caller-supplied `program/` directory,
+resolves `libreofficekit_hook_2` via `dlsym` (falling back to
 `libreofficekit_hook`), and calls it with the install path to receive a
-`LibreOfficeKit*`. Unload is a no-op: LO does not support clean unload,
-and the process will exit anyway.
+`LibreOfficeKit*`. Unload is a deliberate no-op — `dlclose` is not
+called because LO's static initialisers cannot be re-run cleanly
+within the same process, and the OS reclaims the mapping at exit.
 
 ### 5.3 Callback trampoline
 
@@ -194,7 +196,8 @@ sees anything other than an integer handle. When a listener is
 cancelled (or the `Document` closes), the handle is removed from the
 map and the channel is closed; events that race in after removal hit
 the `sync.Map` miss path, increment a `droppedCallbacks` counter, and
-return.
+return. The counter is published via `expvar` under
+`lok.dropped_callbacks` so operators can alert on unexpected drops.
 
 ### 5.4 Error mapping
 
@@ -218,12 +221,24 @@ calls `getError` on a non-success return, copies the string with
   for callers that want to batch calls under their own lock.
 - Callback goroutines never touch LOK directly; if they need to they
   re-enter through the public API, which takes the office mutex.
+- **Thread pinning.** Empirically LOK does not require the caller to
+  be on any specific OS thread, but its internal GSettings/Cairo
+  initialisation on first `libreofficekit_hook_2` can install
+  thread-local state. We therefore call `runtime.LockOSThread` for
+  the duration of `Office.New` and unlock before returning; subsequent
+  calls on any goroutine are safe as long as the office mutex is held.
+  The contract is re-stated in the `Office` godoc.
 
 ## 6. Implementation phases
 
-Each phase is one feature branch, one PR, red→green→refactor TDD, with
-`lok`-package coverage ≥ 90% at all times. Phases are sized so each PR
-can be reviewed in a single sitting.
+Each phase is one feature branch, one PR, red→green→refactor TDD.
+Phases are sized so each PR can be reviewed in a single sitting.
+
+Coverage gate timing: `lok` coverage ≥ 90% applies **from Phase 2
+onward** (Phases 0–1 predate the `lok` package). The `internal/lokc`
+gate — dlopen loader, error-string helper, callback trampoline — is
+active from Phase 1. Trivial single-statement cgo wrappers are
+excluded throughout.
 
 ### Phase 0 — Module scaffold  `chore/scaffold`
 
@@ -247,8 +262,9 @@ test); CI green.
 - No public `lok` API yet.
 
 Acceptance: loader has ≥ 90% coverage on its unit tests; integration
-test (behind tag) successfully opens `$LOK_PATH` on a machine with LO
-installed.
+test (behind tag) successfully `dlopen`s `libsofficeapp.so` from
+`$LOK_PATH` and resolves the hook symbol. Actually invoking the hook
+to obtain a `LibreOfficeKit*` is deferred to Phase 2.
 
 ### Phase 2 — Office lifecycle  `feat/office-lifecycle`
 
@@ -261,7 +277,10 @@ func New(installPath string) (*Office, error)
 func (*Office) Close() error
 func (*Office) VersionInfo() (VersionInfo, error)     // parses LO's JSON in lok, not lokc
 func (*Office) SetOptionalFeatures(feat OptionalFeatures) error
+func (*Office) SetAuthor(name string) error
+func (*Office) TrimMemory(target int) error
 func (*Office) DumpState() (string, error)
+func (*Office) SetDocumentPassword(url, password string) error   // runtime re-prompt, before next Load
 ```
 
 Tests: second `New` returns `ErrAlreadyInitialised`; `Close` is
@@ -280,14 +299,16 @@ func (*Document) Type() DocumentType
 func (*Document) Save() error
 func (*Document) SaveAs(path, format, filterOpts string) error
 func (*Document) Close() error
-func (*Document) SetPassword(pwd string) error    // runtime re-prompt
 ```
 
 `LoadOption` covers password, read-only, lang, macro-security,
 batch-mode, repair. `ctx context.Context` is **not** on Load/Save: LOK
 is synchronous and not cancellable, and a `ctx` parameter that cannot
 cancel is a lie. `LoadFromReader` streams the reader to a temp file
-(the only meaningful way to feed LOK, which wants a path).
+under `os.TempDir()`; the file is deleted in `Document.Close`, so its
+lifetime equals the document's. Runtime password re-prompt lives on
+`Office.SetDocumentPassword(url, password)` (Phase 2) — the LOK
+method is office-scoped and takes a URL.
 
 ### Phase 4 — Views  `feat/views`
 
@@ -429,6 +450,14 @@ func (*Document) PostWindowExtTextInputEvent(windowID uint64, typ int, text stri
 func (*Document) ResizeWindow(windowID uint64, w, h int) error
 
 func (*Document) GetFontSubset(fontName string) ([]byte, error)
+
+// Window paint family — used for sidebars, popups, dialogs that LOK
+// draws into a separate window surface. Mirrors paintTile but for the
+// window addressed by windowID.
+func (*Document) PaintWindow(windowID uint64, buf []byte, pxW, pxH int) error
+func (*Document) PaintWindowDPI(windowID uint64, buf []byte, pxW, pxH int, dpiScale float64) error
+func (*Document) PaintWindowForView(windowID uint64, view ViewID, buf []byte, pxW, pxH int, dpiScale float64) error
+func (*Document) ResetWindow(windowID uint64) error
 ```
 
 Typed unmarshal helpers for the most common command payloads
@@ -443,12 +472,12 @@ func (*Document)  Sign(certPem, keyPem []byte) error
 func (*Office)    InsertCertificate(cert, privateKey []byte) error
 func (*Office)    AddCertificate(cert []byte) error
 func (*Document)  SignatureState() (SignatureState, error)
-func (*Office)    TrimMemory(target int) error
 ```
 
 Tier-2 coverage: functions exist and surface errors cleanly; end-to-end
 signing tests run only when `LOK_TEST_CERTS` is set (paths to a cert
-and key).
+and key). `TrimMemory` is **not** in this tier — it has no external
+dependencies and ships in Phase 2 on `Office`.
 
 ### Phase 12 — Examples  `feat/examples`
 
@@ -546,10 +575,11 @@ will diff the header against it.
 | LOK function            | Phase | Go symbol                      |
 |-------------------------|-------|--------------------------------|
 | documentLoad / …WithOptions | 3 | `Office.Load` / `LoadFromReader` |
-| freeError               | 5.4   | internal (`errstr.go`)         |
-| getError                | 5.4   | internal (`errstr.go`)         |
+| freeError               | n/a   | internal (`errstr.go`, §5.4)   |
+| getError                | n/a   | internal (`errstr.go`, §5.4)   |
 | getVersionInfo          | 2     | `Office.VersionInfo`           |
 | setOptionalFeatures     | 2     | `Office.SetOptionalFeatures`   |
+| setAuthor               | 2     | `Office.SetAuthor`             |
 | registerCallback        | 9     | `Office.AddListener`           |
 | getFilterTypes          | 3     | `Office.FilterTypes`           |
 | dumpState               | 2     | `Office.DumpState`             |
@@ -557,8 +587,8 @@ will diff the header against it.
 | signDocument            | 11    | `Office.SignDocument`          |
 | insertCertificate       | 11    | `Office.InsertCertificate`     |
 | addCertificate          | 11    | `Office.AddCertificate`        |
-| trimMemory              | 11    | `Office.TrimMemory`            |
-| setDocumentPassword     | 3     | `Document.SetPassword`         |
+| trimMemory              | 2     | `Office.TrimMemory`            |
+| setDocumentPassword     | 2     | `Office.SetDocumentPassword(url, pwd)` |
 | destroy                 | 2     | `Office.Close`                 |
 
 ### LibreOfficeKitDocument (per-document)
@@ -607,6 +637,10 @@ will diff the header against it.
 | postWindowExtTextInputEvent    | 10    | `PostWindowExtTextInputEvent`            |
 | resizeWindow                   | 10    | `ResizeWindow`                           |
 | getFontSubset                  | 10    | `GetFontSubset`                          |
+| paintWindow                    | 10    | `PaintWindow`                            |
+| paintWindowDPI                 | 10    | `PaintWindowDPI`                         |
+| paintWindowForView             | 10    | `PaintWindowForView`                     |
+| resetWindow                    | 10    | `ResetWindow`                            |
 | getSignatureState              | 11    | `SignatureState`                         |
 
 Any LOK function that appears in the vendored header but not in this
