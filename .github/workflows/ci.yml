@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    name: lint + unit tests (Go ${{ matrix.go }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - go: "1.23"
+            required: true
+          - go: "stable"
+            required: false
+    continue-on-error: ${{ !matrix.required }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go ${{ matrix.go }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          check-latest: true
+          cache: true
+
+      - name: Show Go version
+        run: go version
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: gofmt check
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needed on:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go test -race
+        run: go test -race ./...
+
+      - name: Coverage (report only, gate added in later phases)
+        run: |
+          go test -covermode=atomic -coverprofile=coverage.out ./...
+          # coverage.out always contains at least `mode: atomic\n`; count
+          # real data lines to decide whether to print a total.
+          if [ "$(grep -cv '^mode:' coverage.out)" -gt 0 ]; then
+            go tool cover -func=coverage.out | tail -n 1
+          else
+            echo "no covered packages yet — expected in Phase 0"
+          fi
