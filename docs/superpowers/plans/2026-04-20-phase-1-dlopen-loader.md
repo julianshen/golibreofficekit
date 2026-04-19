@@ -10,13 +10,17 @@ pointer on a typed Go value. Invoking the hook to produce a
 `LibreOfficeKit*` is deferred to Phase 2.
 
 **Architecture:** Headers vendored under `third_party/lok/` with a
-pinned `VERSION` file. `internal/lokc` is split into a tiny cgo
-preamble (`cgo_unix.go`, `//go:build linux || darwin`) that wraps
-`dlopen`/`dlsym` and a pure-Go `loader.go` that composes them into an
-`OpenLibrary` facade. A separate `errstr.go` holds the
-copy-and-free helper used from Phase 2 onward. Unit tests exercise
-error paths using a trivially-compiled fake `.so` (via the system
-`cc`, skipping if unavailable); the integration test (`-tags=lok_integration`) opens a real LibreOffice install.
+pinned `VERSION` file. `internal/lokc` uses **one** cgo file,
+`dlopen_unix.go` (`//go:build linux || darwin`), that holds the cgo
+preamble AND the dlopen/dlsym Go wrappers — a single translation
+unit, one `import "C"`. `loader.go` is pure Go and composes those
+wrappers into an `OpenLibrary` facade. A separate `errstr.go` holds
+the copy-and-free helper used from Phase 2 onward (it is a cgo file
+because it needs `C.free`). Unit tests exercise error paths using
+`dlopen(NULL)` (the main-program handle) on both Linux and macOS,
+plus a trivially-compiled fake `.so`/`.dylib` built via the system
+`cc`; the integration test (`-tags=lok_integration`) opens a real
+LibreOffice install.
 
 **Tech Stack:** Go 1.23+, cgo, `dlopen`/`dlsym` via `<dlfcn.h>`,
 vendored upstream headers, `cc` (for building the test fixture .so).
@@ -41,8 +45,7 @@ merged.
 | `third_party/lok/LICENSE` | MPL-2.0 upstream notice |
 | `third_party/lok/VERSION` | Pinned LO release tag (`libreoffice-24.8.7.2`) |
 | `internal/lokc/doc.go` | Package comment |
-| `internal/lokc/cgo_unix.go` | cgo preamble; C functions for dlopen/dlsym/dlerror; `//go:build linux || darwin` |
-| `internal/lokc/dlopen.go` | Go wrappers (`dlOpen`, `dlSym`) returning `unsafe.Pointer` + typed errors |
+| `internal/lokc/dlopen_unix.go` | Single cgo file: preamble + Go wrappers (`dlOpen`, `dlSym`) returning `unsafe.Pointer` + typed `DLError`; `//go:build linux || darwin` |
 | `internal/lokc/dlopen_test.go` | Unit tests for the wrappers |
 | `internal/lokc/loader.go` | Public `Library` type, `OpenLibrary(installPath string)`, `openWithPath` (testable, symbols parameterised) |
 | `internal/lokc/loader_test.go` | Unit tests using `cc`-compiled fake `.so` |
@@ -149,8 +152,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 **Files:**
 - Create: `internal/lokc/doc.go`
-- Create: `internal/lokc/cgo_unix.go`
-- Create: `internal/lokc/dlopen.go`
+- Create: `internal/lokc/dlopen_unix.go` (single cgo file)
 - Create: `internal/lokc/dlopen_test.go`
 
 ### 2.1 Failing test first
@@ -199,7 +201,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 ### 2.2 Make it pass
 
-- [ ] **Step 4: Create `internal/lokc/cgo_unix.go`**
+- [ ] **Step 4: Create `internal/lokc/dlopen_unix.go` (single cgo file)**
 
   ```go
   //go:build linux || darwin
@@ -213,11 +215,18 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
   // Wrapper so Go can call dlopen without preprocessor macros.
   static void *go_dlopen(const char *path, int flag) {
+  	// An empty Go string arrives here as a zero-length C string. Pass
+  	// NULL instead so the main-program handle is returned on both
+  	// Linux and macOS (macOS dlopen("") returns NULL+error).
+  	if (path != NULL && path[0] == '\0') {
+  		return dlopen(NULL, flag);
+  	}
   	return dlopen(path, flag);
   }
 
   static void *go_dlsym(void *handle, const char *name) {
-  	// clear any pending error first so NULL return is disambiguated
+  	// Clear any pending error first so a genuine NULL return is
+  	// disambiguated from a stale dlerror.
   	(void)dlerror();
   	return dlsym(handle, name);
   }
@@ -225,19 +234,6 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   static char *go_dlerror(void) {
   	return dlerror();
   }
-  */
-  import "C"
-  ```
-
-- [ ] **Step 5: Create `internal/lokc/dlopen.go`**
-
-  ```go
-  //go:build linux || darwin
-
-  package lokc
-
-  /*
-  #include <dlfcn.h>
   */
   import "C"
 
@@ -250,7 +246,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   type DLError struct {
   	Op     string // "dlopen" or "dlsym"
   	Target string // path for dlopen, symbol name for dlsym
-  	Detail string // dlerror() output, trimmed
+  	Detail string // dlerror() output
   }
 
   func (e *DLError) Error() string {
@@ -258,7 +254,11 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   }
 
   // dlOpen resolves a shared library path via dlopen(RTLD_LAZY|RTLD_LOCAL).
-  // Callers must not dlclose — LibreOffice's static init cannot be re-run.
+  // An empty path opens the main-program handle (portable across Linux
+  // and macOS via the NULL-translation in go_dlopen).
+  //
+  // Callers must not dlclose: LibreOffice's static init cannot be re-run
+  // cleanly within the same process.
   func dlOpen(path string) (unsafe.Pointer, error) {
   	cpath := C.CString(path)
   	defer C.free(unsafe.Pointer(cpath))
@@ -294,24 +294,28 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   }
   ```
 
-- [ ] **Step 6: Run the failing test; expect it to pass now**
+  Everything lives in one cgo file: one preamble, one `import "C"`.
+  `loader.go` (Task 3) is pure Go.
+
+- [ ] **Step 5: Run the failing test; expect it to pass now**
 
   Run: `go test -race ./internal/lokc/...`
   Expected: `PASS`, exit 0.
 
 ### 2.3 Extend coverage to success paths
 
-- [ ] **Step 7: Add success-path tests**
+- [ ] **Step 6: Add success-path tests**
 
   Append to `dlopen_test.go`:
 
   ```go
-  func TestDLOpen_EmptyPathOpensSelf(t *testing.T) {
-  	// dlopen("") on Linux/macOS returns a handle to the main program,
-  	// from which libc symbols are resolvable.
+  func TestDLOpen_EmptyPathOpensMainProgram(t *testing.T) {
+  	// dlOpen("") translates to dlopen(NULL), which returns a handle
+  	// to the main program on both Linux and macOS; libc symbols are
+  	// resolvable through it.
   	handle, err := dlOpen("")
   	if err != nil {
-  		t.Fatalf("dlopen(\"\"): %v", err)
+  		t.Fatalf("dlOpen(\"\"): %v", err)
   	}
   	if handle == nil {
   		t.Fatal("handle is nil")
@@ -355,22 +359,25 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   }
   ```
 
-- [ ] **Step 8: Run tests, confirm all green**
+- [ ] **Step 7: Run tests, confirm all green**
 
   Run: `go test -race -covermode=atomic -coverprofile=cov.out ./internal/lokc/... && go tool cover -func=cov.out | tail -n 1 && rm cov.out`
-  Expected: `PASS`, coverage total on `internal/lokc` ≥ 80% (it will
-  climb further in Task 3–5).
+  Expected: `PASS`. Coverage on this file alone will not yet hit
+  the 90% gate (Task 3–5 add the remaining tested code paths); that
+  is fine, the gate is checked only at Task 6.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 8: Commit**
 
   ```bash
-  git add internal/lokc/doc.go internal/lokc/cgo_unix.go internal/lokc/dlopen.go internal/lokc/dlopen_test.go
+  git add internal/lokc/doc.go internal/lokc/dlopen_unix.go internal/lokc/dlopen_test.go
   git commit -m "feat(lokc): add cgo dlopen/dlsym wrappers
 
-Thin wrappers around dlopen(RTLD_LAZY|RTLD_LOCAL) and dlsym with a
-typed DLError. Unit-tested against dlopen(\"\") + libc symbols so
-no external runtime is required; integration tests in Phase 1
-cover the real LO library path behind the lok_integration tag.
+Single cgo file wrapping dlopen(RTLD_LAZY|RTLD_LOCAL) and dlsym
+with a typed DLError. Empty Go path translates to dlopen(NULL) so
+the main-program handle is returned portably on Linux and macOS.
+Unit-tested against dlopen(NULL) + libc symbols so no external
+runtime is required; integration tests in Phase 1 cover the real
+LO library path behind the lok_integration tag.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   ```
@@ -392,6 +399,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
   import (
   	"errors"
+  	"os"
   	"os/exec"
   	"path/filepath"
   	"runtime"
@@ -416,10 +424,11 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   	}
   }
 
-  // buildFakeSO compiles an empty shared library named libsofficeapp.so
+  // buildFakeSO compiles an empty shared library named libsofficeapp.{so,dylib}
   // into a fresh temp dir. Returns that dir (suitable for OpenLibrary).
-  // Skips the test if `cc` is not installed.
-  func buildFakeSO(t *testing.T, withHookSymbol string) string {
+  // Skips the test if `cc` is not installed. Accepts zero or more hook
+  // symbols to export.
+  func buildFakeSO(t *testing.T, hookSymbols ...string) string {
   	t.Helper()
   	cc, err := exec.LookPath("cc")
   	if err != nil {
@@ -428,17 +437,20 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   	tmp := t.TempDir()
   	src := filepath.Join(tmp, "fake.c")
   	body := "void _lok_fake_marker(void) {}\n"
-  	if withHookSymbol != "" {
-  		body += "void " + withHookSymbol + "(void) {}\n"
+  	for _, sym := range hookSymbols {
+  		body += "void " + sym + "(void) {}\n"
   	}
-  	if err := writeFile(src, body); err != nil {
+  	if err := os.WriteFile(src, []byte(body), 0o644); err != nil {
   		t.Fatal(err)
   	}
-  	so := filepath.Join(tmp, "libsofficeapp.so")
+  	soName := "libsofficeapp.so"
+  	ccArgs := []string{"-shared", "-fPIC"}
   	if runtime.GOOS == "darwin" {
-  		so = filepath.Join(tmp, "libsofficeapp.dylib")
+  		soName = "libsofficeapp.dylib"
+  		ccArgs = []string{"-dynamiclib"}
   	}
-  	out, err := exec.Command(cc, "-shared", "-fPIC", "-o", so, src).CombinedOutput()
+  	so := filepath.Join(tmp, soName)
+  	out, err := exec.Command(cc, append(ccArgs, "-o", so, src)...).CombinedOutput()
   	if err != nil {
   		t.Fatalf("cc build failed: %v\n%s", err, out)
   	}
@@ -446,7 +458,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   }
 
   func TestOpenLibrary_MissingHookSymbolErrors(t *testing.T) {
-  	dir := buildFakeSO(t, "")
+  	dir := buildFakeSO(t) // no hook symbols
   	_, err := OpenLibrary(dir)
   	if err == nil {
   		t.Fatal("expected error for .so without hook symbols")
@@ -457,7 +469,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   	}
   }
 
-  func TestOpenLibrary_PrefersHook2(t *testing.T) {
+  func TestOpenLibrary_ResolvesHook2(t *testing.T) {
   	// Fake exports only libreofficekit_hook_2 — should resolve with version 2.
   	dir := buildFakeSO(t, "libreofficekit_hook_2")
   	lib, err := OpenLibrary(dir)
@@ -466,6 +478,18 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   	}
   	if lib.HookVersion() != 2 {
   		t.Errorf("HookVersion: want 2, got %d", lib.HookVersion())
+  	}
+  }
+
+  func TestOpenLibrary_PrefersHook2WhenBothExist(t *testing.T) {
+  	// Both symbols present — OpenLibrary must prefer hook_2.
+  	dir := buildFakeSO(t, "libreofficekit_hook_2", "libreofficekit_hook")
+  	lib, err := OpenLibrary(dir)
+  	if err != nil {
+  		t.Fatalf("OpenLibrary: %v", err)
+  	}
+  	if lib.HookVersion() != 2 {
+  		t.Errorf("with both symbols present, HookVersion: want 2, got %d", lib.HookVersion())
   	}
   }
 
@@ -480,8 +504,6 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   	}
   }
   ```
-
-  Add a private `writeFile` helper or inline `os.WriteFile`; pick one.
 
 - [ ] **Step 2: Run and observe red**
 
@@ -781,6 +803,10 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   cover-gate:
   	$(GO) test -covermode=atomic -coverprofile=$(COVER_OUT) $(COVER_GATE_PKGS)
   	@total=$$( $(GO) tool cover -func=$(COVER_OUT) | awk '/^total:/ {print $$3}' | tr -d '%' ); \
+  	if [ -z "$$total" ]; then \
+  	  echo "cover-gate: no 'total:' line in $(COVER_OUT) — is the profile empty?" >&2; \
+  	  exit 2; \
+  	fi; \
   	awk -v t="$$total" -v m="$(COVER_GATE_MIN)" 'BEGIN { \
   	  if (t+0 < m+0) { printf "coverage %.1f%% < %.1f%% (gate)\n", t, m; exit 1 } \
   	  printf "coverage %.1f%% >= %.1f%% ok\n", t, m \
@@ -805,17 +831,33 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 ### 6.2 CI step
 
-- [ ] **Step 4: Add `cover-gate` to CI**
+- [ ] **Step 4: Ensure `cc` is available in CI and add `cover-gate`**
 
-  In `.github/workflows/ci.yml`, replace the existing
-  "Coverage (report only, gate added in later phases)" step with:
+  `ubuntu-24.04` ships `build-essential`, so `cc` is present. The
+  `buildFakeSO` helper needs it; if a future runner image drops it,
+  the fake-.so tests will `t.Skip` and coverage will silently fall
+  below the gate. Add an explicit install step up-front, before
+  `actions/setup-go@v5`:
+
+  ```yaml
+      - name: Ensure cc is available
+        run: |
+          if ! command -v cc >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends build-essential
+          fi
+          cc --version | head -n 1
+  ```
+
+  Then replace the existing "Coverage (report only, gate added in
+  later phases)" step with:
 
   ```yaml
       - name: Coverage gate (internal/lokc ≥ 90%)
         run: make cover-gate
   ```
 
-  Keep the step at the same position (after `go test -race`).
+  Keep the gate step at the same position (after `go test -race`).
 
 - [ ] **Step 5: Verify the workflow parses**
 
@@ -831,7 +873,9 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 Replaces the Phase-0 best-effort coverage report with a hard gate on
 internal/lokc. The threshold (COVER_GATE_MIN) and package set
 (COVER_GATE_PKGS) are Make variables so Phase 2 can extend to
-./lok/... by adding to the list. The gate is enforced in CI.
+./lok/... by adding to the list. The gate is enforced in CI, which
+now also verifies cc is present because the unit tests build a fake
+shared library to exercise error paths in OpenLibrary.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   ```
