@@ -13,6 +13,7 @@ jobs:
   lint-and-test:
     name: lint + unit tests (Go ${{ matrix.go }})
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:

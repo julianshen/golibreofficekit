@@ -83,10 +83,18 @@ green run).
 
 ---
 
-## Task 1: `go.mod`
+## Task 1: `go.mod` and root package placeholder
 
 **Files:**
 - Create: `go.mod`
+- Create: `doc.go` (package comment only — see Step 2b)
+
+**Go 1.24 note:** On Go 1.24+, `go vet ./...` and `go test ./...` exit
+non-zero when the pattern matches zero packages. A bare `go.mod` with no
+Go source files therefore fails Steps 4–5. Adding a single `doc.go`
+with just a package declaration resolves this: the build tools see one
+package, it has no test files, and they exit 0. The `doc.go` file
+imposes no API surface and is not production code.
 
 - [ ] **Step 1: Write the verification command**
 
@@ -102,10 +110,24 @@ green run).
   go 1.23
   ```
 
+- [ ] **Step 2b: Create `doc.go`**
+
+  Contents:
+  ```go
+  // Package golibreofficekit is a Go binding for LibreOfficeKit (LOK),
+  // LibreOffice's C ABI for in-process document loading, rendering, and
+  // editing.
+  //
+  // This root package holds no API; the public surface will live under
+  // the lok package added in Phase 2. See docs/superpowers/specs/ for the
+  // design, docs/superpowers/plans/ for the implementation plans.
+  package golibreofficekit
+  ```
+
 - [ ] **Step 3: Verify the module builds**
 
   Run: `go build ./...`
-  Expected: exit 0, no output, no packages built (there are none yet).
+  Expected: exit 0, no output.
 
 - [ ] **Step 4: Verify `go vet`**
 
@@ -115,19 +137,22 @@ green run).
 - [ ] **Step 5: Verify `go test`**
 
   Run: `go test ./...`
-  Expected: exit 0, no output. `./...` on a module with zero packages
-  pattern-matches nothing, so `go test` silently succeeds — the "no Go
-  files" message only appears when `go test` is invoked on a specific
-  directory containing `.go` files without tests.
+  Expected: exit 0; prints
+  `?   github.com/julianshen/golibreofficekit   [no test files]`.
 
 - [ ] **Step 6: Commit**
 
   ```bash
-  git add go.mod
-  git commit -m "chore(scaffold): initialise go.mod for golibreofficekit
+  git add go.mod doc.go
+  git commit -m "chore(scaffold): initialise go.mod and root package placeholder
 
 Module path: github.com/julianshen/golibreofficekit; Go 1.23 minimum
 per spec §1.
+
+doc.go holds only a package declaration so go build/vet/test ./...
+on Go 1.24+ find a package to act on — without it, Go 1.24 exits 1
+on './...' that matches nothing. No API surface here; the public
+lok package lands in Phase 2.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   ```
