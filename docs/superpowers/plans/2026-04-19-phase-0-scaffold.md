@@ -30,8 +30,9 @@ All paths relative to the repo root `/home/julianshen/prj/golibreofficekit`.
 | Path | Role |
 |------|------|
 | `go.mod` (create) | Declares module path and Go version |
+| `go.sum` (auto-generated) | Created by `go mod tidy` when the first dependency is added; not present after Phase 0 |
 | `.gitignore` (create) | Excludes build artefacts, coverage files, editor cruft |
-| `Makefile` (create) | Wraps `build`, `test`, `test-integration`, `cover`, `lint`, `fmt` |
+| `Makefile` (create) | Wraps `build`, `test`, `test-integration`, `cover`, `lint`, `fmt`, `fmt-check` |
 | `README.md` (create) | One-page stub pointing at `CLAUDE.md` and the spec |
 | `.github/workflows/ci.yml` (create) | Lint + unit-test job on linux/amd64, Go 1.23 & tip |
 | `docs/superpowers/plans/2026-04-19-phase-0-scaffold.md` (this file, already created) | This plan |
@@ -62,12 +63,14 @@ green run).
   ```bash
   git checkout main
   git merge --ff-only chore/design-spec
-  git log --oneline -n 3
+  git merge-base --is-ancestor chore/design-spec HEAD && echo MERGED_OK
   ```
-  Expected: fast-forward succeeds; the top commit is `0f744ba` (or newer)
-  from `chore/design-spec`, preceded by `64dcc68` and `6b76468`. If a
+  Expected: fast-forward succeeds and `MERGED_OK` is printed. If a
   non-fast-forward error fires, stop and ask the user; do not `git merge
   --no-ff` without authorisation.
+
+  Rollback (if needed, before pushing): `git reset --hard ORIG_HEAD` on
+  `main`.
 
 - [ ] **Step 3: Create and switch to `chore/scaffold`**
 
@@ -112,8 +115,10 @@ green run).
 - [ ] **Step 5: Verify `go test`**
 
   Run: `go test ./...`
-  Expected: exit 0, message `no Go files in …` or no output. An empty
-  module is a valid green.
+  Expected: exit 0, no output. `./...` on a module with zero packages
+  pattern-matches nothing, so `go test` silently succeeds — the "no Go
+  files" message only appears when `go test` is invoked on a specific
+  directory containing `.go` files without tests.
 
 - [ ] **Step 6: Commit**
 
@@ -187,19 +192,21 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 The Makefile is the workflow contract for every later phase; every
 phase of the spec references these targets verbatim.
 
-- [ ] **Step 1: Write a failing verification**
+- [ ] **Step 1: Confirm Makefile is absent (red state)**
 
-  Run: `make build 2>&1 | head -n 3`
-  Expected: `make: *** No targets specified and no makefile found. Stop.`
-  (the exact message may differ by Make version; any "no makefile found"
-  error is correct).
+  Run: `test ! -f Makefile && echo ABSENT`
+  Expected: `ABSENT`.
 
 - [ ] **Step 2: Create `Makefile`**
 
-  Contents (TAB-indented — this matters):
+  Contents (TAB-indented — this matters). `GOFLAGS ?=` is intentionally
+  empty; it exists so callers can override (`make test GOFLAGS='-v'`):
   ```makefile
   # golibreofficekit — project Makefile.
   # Every target is idempotent and safe to re-run.
+
+  SHELL        := /usr/bin/env bash
+  .SHELLFLAGS  := -eu -o pipefail -c
 
   GO           ?= go
   GOFLAGS      ?=
@@ -208,9 +215,9 @@ phase of the spec references these targets verbatim.
   COVER_HTML   := coverage.html
   INTEGRATION_TAG := lok_integration
 
-  .PHONY: all build test test-integration cover lint fmt vet tidy clean
+  .PHONY: all build test test-integration cover lint fmt fmt-check vet tidy clean
 
-  all: fmt vet test
+  all: fmt-check vet test
 
   build:
   	$(GO) build $(GOFLAGS) $(PKG)
@@ -229,14 +236,19 @@ phase of the spec references these targets verbatim.
   vet:
   	$(GO) vet $(PKG)
 
+  # Rewrite in place.
   fmt:
-  	$(GO) fmt $(PKG)
+  	gofmt -w .
+
+  # Read-only guard used by CI and `make lint`. Fails if any file is
+  # unformatted — never rewrites.
+  fmt-check:
   	@unformatted="$$(gofmt -l .)"; \
   	if [ -n "$$unformatted" ]; then \
   	  echo "gofmt needed on:"; echo "$$unformatted"; exit 1; \
   	fi
 
-  lint: vet fmt
+  lint: vet fmt-check
 
   tidy:
   	$(GO) mod tidy
@@ -245,27 +257,33 @@ phase of the spec references these targets verbatim.
   	rm -f $(COVER_OUT) $(COVER_HTML)
   ```
 
+  Why two formatting targets: `fmt` rewrites, `fmt-check` is read-only.
+  CI and `lint` use `fmt-check` so "silent success" genuinely means "no
+  file needed formatting", rather than "we auto-fixed everything".
+
 - [ ] **Step 3: Verify each target on the empty module**
 
   Run:
   ```bash
-  make build && echo BUILD_OK
-  make vet   && echo VET_OK
-  make fmt   && echo FMT_OK
-  make test  && echo TEST_OK
-  make cover && echo COVER_OK
-  make lint  && echo LINT_OK
-  make clean && echo CLEAN_OK
+  make build     && echo BUILD_OK
+  make vet       && echo VET_OK
+  make fmt       && echo FMT_OK
+  make fmt-check && echo FMT_CHECK_OK
+  make test      && echo TEST_OK
+  make cover     && echo COVER_OK
+  make lint      && echo LINT_OK
+  make clean     && echo CLEAN_OK
   ```
   Expected: every target prints its `_OK` line. `make cover` prints
-  "total: (statements) 0.0%" on the second-to-last line — that is fine for
-  Phase 0 and will tighten from Phase 1.
+  `total:	(statements)	0.0%` on the penultimate line — expected for
+  Phase 0 and tightens to ≥ 90% on `lok` from Phase 2.
 
 - [ ] **Step 4: Verify `make test-integration` on a machine without LO**
 
   Run: `make test-integration`
-  Expected: exit 0 with "no Go files" — integration tests do not yet
-  exist. Phase 1 adds the first tag-gated test.
+  Expected: exit 0, no output. There are no packages matching
+  `./...` yet, so the tagged build is silently green. Phase 1 adds the
+  first tag-gated test.
 
 - [ ] **Step 5: Commit**
 
@@ -351,13 +369,10 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 **Files:**
 - Create: `.github/workflows/ci.yml`
 
-- [ ] **Step 1: Create directory**
+- [ ] **Step 1: Create the workflows directory**
 
-  Run:
-  ```bash
-  ls .github/workflows 2>/dev/null && echo exists || mkdir -p .github/workflows
-  ```
-  Expected: the directory is created (first run) or already exists.
+  Run: `mkdir -p .github/workflows && test -d .github/workflows && echo OK`
+  Expected: `OK`. `mkdir -p` is idempotent, so re-running is safe.
 
 - [ ] **Step 2: Create `.github/workflows/ci.yml`**
 
@@ -381,7 +396,12 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
       strategy:
         fail-fast: false
         matrix:
-          go: ["1.23", "stable"]
+          include:
+            - go: "1.23"
+              required: true
+            - go: "stable"
+              required: false
+      continue-on-error: ${{ !matrix.required }}
       steps:
         - uses: actions/checkout@v4
 
@@ -412,18 +432,22 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
         - name: Coverage (report only, gate added in later phases)
           run: |
-            go test -covermode=atomic -coverprofile=coverage.out ./... || true
-            if [ -s coverage.out ]; then
+            go test -covermode=atomic -coverprofile=coverage.out ./...
+            # coverage.out always contains at least `mode: atomic\n`; count
+            # real data lines to decide whether to print a total.
+            if [ "$(grep -cv '^mode:' coverage.out)" -gt 0 ]; then
               go tool cover -func=coverage.out | tail -n 1
             else
-              echo "coverage.out empty (no tests yet) — expected in Phase 0"
+              echo "no covered packages yet — expected in Phase 0"
             fi
   ```
 
   Notes for the implementer:
   - Python/Node are not required — `actions/setup-go@v5` is the only
     toolchain setup.
-  - Matrix on `1.23` (minimum) and `stable` (current) — matches the spec.
+  - Matrix on `1.23` (minimum, required) and `stable` (floating,
+    `continue-on-error`) — a Go release breaking only on tip does not
+    block the PR.
   - The coverage step is best-effort in Phase 0 and will be promoted to
     a hard gate (`< 90% → fail`) in Phase 2 when `lok` exists.
 
@@ -466,12 +490,13 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   Run:
   ```bash
   make clean
-  make all    # fmt + vet + test
+  make all              # fmt-check + vet + test
   make cover
   make test-integration
   ```
-  Expected: all green; `make cover` prints a total line
-  (`total:	(statements)	0.0%`).
+  Expected: all commands exit 0; `make cover` prints a total line
+  (`total:	(statements)	0.0%`). `make test` and
+  `make test-integration` emit no output on an empty module.
 
 - [ ] **Step 3: Confirm branch topology**
 
@@ -512,12 +537,12 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 ## Acceptance criteria (matches spec §Phase 0)
 
-- [x] `make build` succeeds on a fresh clone.
-- [x] `make test` exits 0 (no test files — vacuous green).
-- [x] `make lint` is silent.
-- [x] `make cover` produces `coverage.out` without error.
-- [x] CI workflow file parses and runs on push/PR.
-- [x] No LOK code, no vendored headers yet — those belong to Phase 1.
+- [ ] `make build` succeeds on a fresh clone.
+- [ ] `make test` exits 0 (no packages yet — silent green).
+- [ ] `make lint` (= `vet` + `fmt-check`) exits 0 with no output.
+- [ ] `make cover` produces `coverage.out` without error.
+- [ ] CI workflow file parses and runs on push/PR.
+- [ ] No LOK code, no vendored headers yet — those belong to Phase 1.
 
 When this plan's boxes are all ticked, `chore/scaffold` is ready to merge
 to `main` and Phase 1's plan (`chore/dlopen-loader`) can begin.
