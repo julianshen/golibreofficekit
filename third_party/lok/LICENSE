@@ -1,0 +1,6 @@
+LibreOfficeKit headers vendored from the LibreOffice core project
+(https://github.com/LibreOffice/core), tag libreoffice-24.8.7.2.
+
+Licensed under the Mozilla Public License, v. 2.0. A copy of the
+MPL-2.0 is available at https://mozilla.org/MPL/2.0/. See the header
+files themselves for per-file attribution.
