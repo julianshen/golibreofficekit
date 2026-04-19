@@ -627,7 +627,6 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
   /*
   #include <stdlib.h>
-  #include <string.h>
   */
   import "C"
 
@@ -790,8 +789,9 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: Add `cover-gate` target**
 
-  Append to `Makefile` (keep alphabetical ordering of `.PHONY` entries
-  if that matches your taste; otherwise slot in):
+  Append to `Makefile`. The snippet declares its own
+  `.PHONY: cover-gate` line, so no edit to the existing `.PHONY`
+  header at the top of the file is required.
 
   ```makefile
   # Fail if internal/lokc coverage falls below 90%. Extend to other
