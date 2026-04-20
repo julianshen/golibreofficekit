@@ -47,9 +47,11 @@ func (e *DLError) Error() string {
 	return fmt.Sprintf("%s %q: %s", e.Op, e.Target, e.Detail)
 }
 
-// dlOpen resolves a shared library path via dlopen(RTLD_LAZY|RTLD_LOCAL).
-// An empty path opens the main-program handle (portable across Linux
-// and macOS via the NULL-translation in go_dlopen).
+// dlOpen resolves a shared library path via dlopen(RTLD_LAZY). This
+// matches LibreOfficeKitInit.h's lok_loadlib, which LO's plugin graph
+// relies on for cross-library symbol resolution. An empty path opens
+// the main-program handle (portable across Linux and macOS via the
+// NULL-translation in go_dlopen).
 //
 // Callers must not dlclose: LibreOffice's static init cannot be re-run
 // cleanly within the same process.
@@ -57,7 +59,7 @@ func dlOpen(path string) (unsafe.Pointer, error) {
 	cpath := C.CString(path)
 	defer C.free(unsafe.Pointer(cpath))
 
-	handle := C.go_dlopen(cpath, C.RTLD_LAZY|C.RTLD_LOCAL)
+	handle := C.go_dlopen(cpath, C.RTLD_LAZY)
 	if handle == nil {
 		return nil, &DLError{Op: "dlopen", Target: path, Detail: lastDLError()}
 	}

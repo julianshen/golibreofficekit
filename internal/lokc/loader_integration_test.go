@@ -1,4 +1,4 @@
-//go:build lok_integration
+//go:build lok_integration && (linux || darwin)
 
 package lokc
 
