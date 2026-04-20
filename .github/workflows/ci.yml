@@ -26,6 +26,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Ensure cc is available
+        run: |
+          if ! command -v cc >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends build-essential
+          fi
+          cc --version | head -n 1
+
       - name: Set up Go ${{ matrix.go }}
         uses: actions/setup-go@v5
         with:
@@ -51,13 +59,5 @@ jobs:
       - name: go test -race
         run: go test -race ./...
 
-      - name: Coverage (report only, gate added in later phases)
-        run: |
-          go test -covermode=atomic -coverprofile=coverage.out ./...
-          # coverage.out always contains at least `mode: atomic\n`; count
-          # real data lines to decide whether to print a total.
-          if [ "$(grep -cv '^mode:' coverage.out)" -gt 0 ]; then
-            go tool cover -func=coverage.out | tail -n 1
-          else
-            echo "no covered packages yet — expected in Phase 0"
-          fi
+      - name: Coverage gate (internal/lokc ≥ 90%)
+        run: make cover-gate
