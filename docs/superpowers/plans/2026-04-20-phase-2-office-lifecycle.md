@@ -366,7 +366,7 @@ PR #3 merged.
   git commit -m "feat(lokc): add office-level cgo wrappers
 
 InvokeHook turns the resolved hook symbol into a LibreOfficeKit*
-handle, with hook_2 prefered (user-profile URL honoured when
+handle, with hook_2 preferred (user-profile URL honoured when
 non-empty) and hook_1 fallback. OfficeGetError/VersionInfo/DumpState
 free the LOK-allocated char* through copyAndFree. SetOptional
 Features, SetAuthor, SetDocumentPassword, TrimMemory, Destroy are
