@@ -106,3 +106,17 @@ func TestOpenLibrary_FallsBackToHook1(t *testing.T) {
 		t.Errorf("HookVersion: want 1, got %d", lib.HookVersion())
 	}
 }
+
+func TestLibrary_Accessors(t *testing.T) {
+	dir := buildFakeSO(t, "libreofficekit_hook_2")
+	lib, err := OpenLibrary(dir)
+	if err != nil {
+		t.Fatalf("OpenLibrary: %v", err)
+	}
+	if got := lib.InstallPath(); got != dir {
+		t.Errorf("InstallPath()=%q, want %q", got, dir)
+	}
+	if lib.HookSymbol() == nil {
+		t.Error("HookSymbol() is nil; hook_2 resolved above so it should be non-nil")
+	}
+}
