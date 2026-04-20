@@ -51,3 +51,21 @@ tidy:
 
 clean:
 	rm -f $(COVER_OUT) $(COVER_HTML)
+
+# Fail if internal/lokc coverage falls below 90%. Extend to other
+# packages as they arrive (lok from Phase 2 onward).
+COVER_GATE_PKGS := ./internal/lokc/...
+COVER_GATE_MIN  := 90.0
+
+.PHONY: cover-gate
+cover-gate:
+	$(GO) test -covermode=atomic -coverprofile=$(COVER_OUT) $(COVER_GATE_PKGS)
+	@total=$$( $(GO) tool cover -func=$(COVER_OUT) | awk '/^total:/ {print $$3}' | tr -d '%' ); \
+	if [ -z "$$total" ]; then \
+	  echo "cover-gate: no 'total:' line in $(COVER_OUT) — is the profile empty?" >&2; \
+	  exit 2; \
+	fi; \
+	awk -v t="$$total" -v m="$(COVER_GATE_MIN)" 'BEGIN { \
+	  if (t+0 < m+0) { printf "coverage %.1f%% < %.1f%% (gate)\n", t, m; exit 1 } \
+	  printf "coverage %.1f%% >= %.1f%% ok\n", t, m \
+	}'
