@@ -107,6 +107,15 @@ func TestOpenLibrary_FallsBackToHook1(t *testing.T) {
 	}
 }
 
+func TestSoFilename_NonDarwin(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("darwin branch exercised elsewhere")
+	}
+	if got := soFilename(); got != "libsofficeapp.so" {
+		t.Errorf("soFilename()=%q, want libsofficeapp.so", got)
+	}
+}
+
 func TestLibrary_Accessors(t *testing.T) {
 	dir := buildFakeSO(t, "libreofficekit_hook_2")
 	lib, err := OpenLibrary(dir)
