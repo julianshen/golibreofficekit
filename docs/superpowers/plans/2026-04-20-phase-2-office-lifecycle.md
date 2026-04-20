@@ -23,9 +23,11 @@ func (*Office) SetDocumentPassword(url, password string) error
 **Architecture:**
 - `internal/lokc` grows thin 1:1 C wrappers: `InvokeHook`,
   `OfficeDestroy`, `OfficeGetError`, `OfficeGetVersionInfo`,
-  `OfficeSetOptionalFeatures`, `OfficeSetAuthor`, `OfficeTrimMemory`,
-  `OfficeDumpState`, `OfficeSetDocumentPassword`. Each returns raw
-  scalars, Go strings (via `copyAndFree`), or typed errors.
+  `OfficeSetOptionalFeatures`, `OfficeSetAuthor` (routed through
+  `setOption("Author", …)` because LOK 24.8 has no direct `setAuthor`
+  vtable entry), `OfficeTrimMemory`, `OfficeDumpState`,
+  `OfficeSetDocumentPassword`. Each returns raw scalars, Go strings
+  (via `copyAndFree`), or typed errors.
 - `lok` (new package, public) wraps `lokc` behind an unexported
   `backend` interface so unit tests can inject a fake. All JSON
   parsing, enum typing, mutex handling, and error wrapping live here.
@@ -181,19 +183,21 @@ PR #3 merged.
       p->pClass->setDocumentPassword(p, url, password);
   }
 
+  // setAuthor is NOT a direct vtable entry in LOK 24.8's
+  // LibreOfficeKit.h — we route it through setOption("Author", value),
+  // which IS in the header at line 124.
   static void go_office_setAuthor(LibreOfficeKit *p, const char *author) {
-      // setAuthor arrived later; guard against older builds.
-      #ifdef LOK_USE_UNSTABLE_API
-      if (p == NULL || p->pClass == NULL) return;
-      // Not all 24.x pClass variants expose setAuthor; runtime-gated by
-      // the OptionalFeature caller.
-      #endif
-      (void)p; (void)author;
+      if (p == NULL || p->pClass == NULL || p->pClass->setOption == NULL) return;
+      p->pClass->setOption(p, "Author", author);
   }
 
+  // dumpState: LO allocates *pState via strdup/malloc and transfers
+  // ownership to the caller. We pass the pointer straight to copyAndFree,
+  // which calls C.free (matching LO's malloc-family allocation). Do not
+  // free with LOK's freeError — that is for error-string ownership only.
   static char* go_office_dumpState(LibreOfficeKit *p) {
       if (p == NULL || p->pClass == NULL || p->pClass->dumpState == NULL) return NULL;
-      // signature: void dumpState(LibreOfficeKit* pThis, const char* args, char** pState);
+      // signature: void dumpState(LibreOfficeKit* pThis, const char* pOptions, char** pState);
       char *state = NULL;
       p->pClass->dumpState(p, "", &state);
       return state;
@@ -300,7 +304,9 @@ PR #3 merged.
   	C.go_office_setDocumentPassword(h.p, cURL, cPwd)
   }
 
-  // OfficeSetAuthor forwards to pClass->setAuthor when available.
+  // OfficeSetAuthor forwards to pClass->setOption("Author", value).
+  // The vendored LibreOfficeKit.h has no dedicated setAuthor vtable
+  // entry; setOption is the documented route.
   func OfficeSetAuthor(h OfficeHandle, author string) {
   	if !h.IsValid() {
   		return
@@ -345,9 +351,13 @@ PR #3 merged.
 - [ ] **Step 5: Run coverage**
 
   Run: `make cover-gate`
-  Expected: ≥ 90% still. The new C wrappers have plenty of
-  no-op/guard branches that are hit from Go via nil-handle tests.
-  If < 90%, STOP and report the uncovered functions. Do not proceed.
+  Expected: ≥ 90% still. `go test -cover` only instruments Go; the C
+  bodies of the wrappers are not counted. What IS counted is the
+  Go-side path around each wrapper: the nil-handle early return, the
+  `C.CString`/`C.free` plumbing, and the `copyAndFree` call where
+  present. Those are exercised by the unit tests in Step 1.
+  If coverage is below 90%, STOP and report the uncovered Go
+  functions. Do not proceed.
 
 - [ ] **Step 6: Commit**
 
@@ -700,6 +710,9 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   	f.destroys++
   }
 
+  // withFakeBackend swaps the package-level backend + singleton. It
+  // mutates globals (currentBackend, live), so tests using it must NOT
+  // call t.Parallel() — that would race on those globals.
   func withFakeBackend(t *testing.T, f *fakeBackend) {
   	t.Helper()
   	orig := currentBackend
@@ -859,15 +872,16 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   	}
 
   	// Pin to the OS thread for the hook call only (LO's internal
-  	// init installs thread-local state); unpinned for normal use.
+  	// init installs thread-local state). A single defer handles
+  	// every exit path including panic.
   	runtime.LockOSThread()
+  	defer runtime.UnlockOSThread()
+
   	lib, err := be.OpenLibrary(installPath)
   	if err != nil {
-  		runtime.UnlockOSThread()
   		return nil, err
   	}
   	h, err := be.InvokeHook(lib, options.userProfileURL)
-  	runtime.UnlockOSThread()
   	if err != nil {
   		return nil, err
   	}
@@ -1093,12 +1107,12 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   import "testing"
 
   func TestOptionalFeatures_BitwiseOr(t *testing.T) {
-  	f := FeatureDocumentPassword | FeatureNoTilesInvalidationInSave
+  	f := FeatureDocumentPassword | FeatureNoTiledAnnotations
   	if !f.Has(FeatureDocumentPassword) {
   		t.Error("missing FeatureDocumentPassword")
   	}
-  	if !f.Has(FeatureNoTilesInvalidationInSave) {
-  		t.Error("missing FeatureNoTilesInvalidationInSave")
+  	if !f.Has(FeatureNoTiledAnnotations) {
+  		t.Error("missing FeatureNoTiledAnnotations")
   	}
   	if f.Has(FeaturePartInInvalidation) {
   		t.Error("FeaturePartInInvalidation should not be set")
@@ -1155,12 +1169,12 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
   // LibreOfficeKitOptionalFeatures. Keep ordering identical to the
   // upstream header; add new values at the end as upstream grows.
   const (
-  	FeatureDocumentPassword                OptionalFeatures = 1 << 0
-  	FeatureDocumentPasswordToModify        OptionalFeatures = 1 << 1
-  	FeaturePartInInvalidation              OptionalFeatures = 1 << 2
-  	FeatureNoTilesInvalidationInSave       OptionalFeatures = 1 << 3
-  	FeatureRangeHeaders                    OptionalFeatures = 1 << 4
-  	FeatureViewIdInVisCursorInvalidation   OptionalFeatures = 1 << 5
+  	FeatureDocumentPassword                OptionalFeatures = 1 << 0 // LOK_FEATURE_DOCUMENT_PASSWORD
+  	FeatureDocumentPasswordToModify        OptionalFeatures = 1 << 1 // LOK_FEATURE_DOCUMENT_PASSWORD_TO_MODIFY
+  	FeaturePartInInvalidation              OptionalFeatures = 1 << 2 // LOK_FEATURE_PART_IN_INVALIDATION_CALLBACK
+  	FeatureNoTiledAnnotations              OptionalFeatures = 1 << 3 // LOK_FEATURE_NO_TILED_ANNOTATIONS
+  	FeatureRangeHeaders                    OptionalFeatures = 1 << 4 // LOK_FEATURE_RANGE_HEADERS
+  	FeatureViewIdInVisCursorInvalidation   OptionalFeatures = 1 << 5 // LOK_FEATURE_VIEWID_IN_VISCURSOR_INVALIDATION_CALLBACK
   )
 
   // Has reports whether the given bit is set.
