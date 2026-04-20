@@ -4,8 +4,19 @@ package lokc
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
+
+func TestDLError_ErrorMessage(t *testing.T) {
+	err := &DLError{Op: "dlopen", Target: "/no/such.so", Detail: "not found"}
+	got := err.Error()
+	for _, want := range []string{"dlopen", "/no/such.so", "not found"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Error()=%q, missing %q", got, want)
+		}
+	}
+}
 
 func TestDLOpen_MissingFileReturnsError(t *testing.T) {
 	_, err := dlOpen("/this/path/does/not/exist.so")
