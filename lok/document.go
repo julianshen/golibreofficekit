@@ -4,6 +4,10 @@ package lok
 
 import (
 	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -123,6 +127,103 @@ func buildLoadOptions(opts []LoadOption) loadOptions {
 		fn(&lo)
 	}
 	return lo
+}
+
+// Load opens a document from the filesystem. The path is converted
+// to a file:// URL before being passed to LOK. Variadic options
+// switch to documentLoadWithOptions when any option that needs the
+// options string is present; otherwise documentLoad is used.
+func (o *Office) Load(path string, opts ...LoadOption) (*Document, error) {
+	if path == "" {
+		return nil, ErrPathRequired
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.closed {
+		return nil, ErrClosed
+	}
+
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, &LOKError{Op: "Load", Detail: err.Error(), err: err}
+	}
+	fileURL := (&url.URL{Scheme: "file", Path: abs}).String()
+
+	lo := buildLoadOptions(opts)
+	if lo.password != "" {
+		o.be.OfficeSetDocumentPassword(o.h, fileURL, lo.password)
+	}
+
+	optsStr, err := composeLoadOptions(lo)
+	if err != nil {
+		return nil, err
+	}
+
+	var h documentHandle
+	if optsStr != "" {
+		h, err = o.be.DocumentLoadWithOptions(o.h, fileURL, optsStr)
+	} else {
+		h, err = o.be.DocumentLoad(o.h, fileURL)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	doc := &Document{
+		office:  o,
+		h:       h,
+		origURL: fileURL,
+	}
+	return doc, nil
+}
+
+// composeLoadOptions turns the typed LoadOption values into the raw
+// options string LOK accepts at documentLoadWithOptions. LOK parses
+// the string as comma-separated key=value pairs. Returns ("", nil)
+// when no typed option or filterOpts is set. Returns ("",
+// ErrInvalidOption) if lang contains a reserved character.
+func composeLoadOptions(lo loadOptions) (string, error) {
+	if strings.ContainsAny(lo.lang, ",=") {
+		return "", ErrInvalidOption
+	}
+	var parts []string
+	if lo.readOnly {
+		parts = append(parts, "ReadOnly=1")
+	}
+	if lo.lang != "" {
+		parts = append(parts, "Language="+lo.lang)
+	}
+	if lo.macroSecuritySet {
+		parts = append(parts, fmt.Sprintf("MacroSecurityLevel=%d", lo.macroSecurity))
+	}
+	if lo.batch {
+		parts = append(parts, "Batch=1")
+	}
+	if lo.repair {
+		parts = append(parts, "Repair=1")
+	}
+	if lo.filterOpts != "" {
+		parts = append(parts, lo.filterOpts)
+	}
+	if len(parts) == 0 {
+		return "", nil
+	}
+	return strings.Join(parts, ","), nil
+}
+
+// Close destroys the LOK document handle and cleans up any temp file
+// created by LoadFromReader. Idempotent.
+func (d *Document) Close() error {
+	d.closeOnce.Do(func() {
+		d.office.mu.Lock()
+		defer d.office.mu.Unlock()
+		d.office.be.DocumentDestroy(d.h)
+		d.closed = true
+		if d.tempPath != "" {
+			_ = os.Remove(d.tempPath)
+		}
+	})
+	return nil
 }
 
 // Type returns the document's LOK type, or TypeOther on a closed doc.

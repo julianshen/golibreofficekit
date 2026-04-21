@@ -7,6 +7,8 @@ var (
 	ErrInstallPathRequired = errors.New("lok: install path is required")
 	ErrAlreadyInitialised  = errors.New("lok: already initialised; Close the existing Office first")
 	ErrClosed              = errors.New("lok: office is closed")
+	ErrPathRequired        = errors.New("lok: document path is required")
+	ErrInvalidOption       = errors.New("lok: invalid load option (contains reserved character)")
 )
 
 // LOKError wraps an error string returned by LibreOffice itself.
