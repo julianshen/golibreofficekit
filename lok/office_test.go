@@ -38,13 +38,13 @@ func (f *fakeBackend) InvokeHook(lib libraryHandle, _ string) (officeHandle, err
 	}
 	return &fakeOffice{be: f}, nil
 }
-func (f *fakeBackend) OfficeGetError(officeHandle) string                      { return "" }
-func (f *fakeBackend) OfficeGetVersionInfo(officeHandle) string                { return f.version }
-func (f *fakeBackend) OfficeSetOptionalFeatures(officeHandle, uint64)          {}
-func (f *fakeBackend) OfficeSetDocumentPassword(officeHandle, string, string)  {}
-func (f *fakeBackend) OfficeSetAuthor(officeHandle, string)                    {}
-func (f *fakeBackend) OfficeDumpState(officeHandle) string                     { return "state" }
-func (f *fakeBackend) OfficeTrimMemory(officeHandle, int)                      {}
+func (f *fakeBackend) OfficeGetError(officeHandle) string                     { return "" }
+func (f *fakeBackend) OfficeGetVersionInfo(officeHandle) string               { return f.version }
+func (f *fakeBackend) OfficeSetOptionalFeatures(officeHandle, uint64)         {}
+func (f *fakeBackend) OfficeSetDocumentPassword(officeHandle, string, string) {}
+func (f *fakeBackend) OfficeSetAuthor(officeHandle, string)                   {}
+func (f *fakeBackend) OfficeDumpState(officeHandle) string                    { return "state" }
+func (f *fakeBackend) OfficeTrimMemory(officeHandle, int)                     {}
 func (f *fakeBackend) OfficeDestroy(officeHandle) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
