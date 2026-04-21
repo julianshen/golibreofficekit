@@ -2,7 +2,9 @@ package lok
 
 import "encoding/json"
 
-// VersionInfo is LibreOffice's version payload.
+// VersionInfo is LibreOffice's version payload. The BuildID field's
+// JSON tag is "BuildId" to match LO's actual payload shape; the Go
+// field name uses the idiomatic "ID" capitalisation.
 type VersionInfo struct {
 	ProductName    string `json:"ProductName"`
 	ProductVersion string `json:"ProductVersion"`

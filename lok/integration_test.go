@@ -8,6 +8,15 @@ import (
 	"testing"
 )
 
+// Known flake: running the full integration suite can crash with
+// `fatal error: non-Go code set up signal handler without SA_ONSTACK
+// flag`. LibreOffice installs SIGWINCH/SIGPIPE handlers that lack
+// SA_ONSTACK; Go's runtime aborts when either signal fires. No
+// Go-side workaround is fully reliable. Running this test in
+// isolation (`-run TestIntegration_FullLifecycle`) is deterministic;
+// re-run the suite if you hit the crash. CI does not run integration
+// (LOK_PATH unset), so the flake doesn't gate merges.
+
 // TestIntegration_FullLifecycle exercises New → VersionInfo →
 // SetAuthor → SetOptionalFeatures → TrimMemory → DumpState → Close
 // in one process. LibreOffice's lok_init cannot be re-invoked within
