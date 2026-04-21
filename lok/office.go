@@ -1,0 +1,124 @@
+package lok
+
+import (
+	"runtime"
+	"sync"
+)
+
+// currentBackend is swapped in tests; real builds initialise it via
+// init() in real_backend.go.
+var (
+	backendMu      sync.Mutex
+	currentBackend backend
+)
+
+func setBackend(b backend) {
+	backendMu.Lock()
+	defer backendMu.Unlock()
+	currentBackend = b
+}
+
+// Office is the LibreOffice process. It is safe to use from multiple
+// goroutines; calls serialise on an internal mutex.
+type Office struct {
+	mu     sync.Mutex
+	be     backend
+	h      officeHandle
+	closed bool
+}
+
+// Singleton state.
+var (
+	singletonMu sync.Mutex
+	live        *Office
+)
+
+// resetSingleton exists for tests; production paths use Close.
+func resetSingleton() {
+	singletonMu.Lock()
+	live = nil
+	singletonMu.Unlock()
+}
+
+// New loads LibreOffice from installPath and returns the single
+// *Office for this process. A second New while a previous *Office is
+// live returns ErrAlreadyInitialised.
+func New(installPath string, opts ...Option) (*Office, error) {
+	if installPath == "" {
+		return nil, ErrInstallPathRequired
+	}
+
+	singletonMu.Lock()
+	defer singletonMu.Unlock()
+	if live != nil {
+		return nil, ErrAlreadyInitialised
+	}
+
+	options := buildOptions(opts)
+
+	backendMu.Lock()
+	be := currentBackend
+	backendMu.Unlock()
+	if be == nil {
+		be = realBackend{}
+	}
+
+	// Pin to the OS thread for the hook call (LO's internal init
+	// installs thread-local state). A single defer handles every
+	// exit path including panic.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	lib, err := be.OpenLibrary(installPath)
+	if err != nil {
+		return nil, err
+	}
+	h, err := be.InvokeHook(lib, options.userProfileURL)
+	if err != nil {
+		return nil, err
+	}
+
+	o := &Office{be: be, h: h}
+	live = o
+	return o, nil
+}
+
+// Close destroys the LOK office and clears the singleton. Safe to
+// call multiple times; only the first invocation hits LOK.
+func (o *Office) Close() error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.closed {
+		return nil
+	}
+	o.closed = true
+	o.be.OfficeDestroy(o.h)
+
+	singletonMu.Lock()
+	if live == o {
+		live = nil
+	}
+	singletonMu.Unlock()
+	return nil
+}
+
+// Option configures New.
+type Option func(*options)
+
+type options struct {
+	userProfileURL string
+}
+
+// WithUserProfile sets the user-profile URL passed to
+// libreofficekit_hook_2. Empty string uses LO's default location.
+func WithUserProfile(url string) Option {
+	return func(o *options) { o.userProfileURL = url }
+}
+
+func buildOptions(opts []Option) options {
+	var o options
+	for _, fn := range opts {
+		fn(&o)
+	}
+	return o
+}
