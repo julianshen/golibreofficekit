@@ -14,7 +14,7 @@ type fakeBackend struct {
 	version  string
 	destroys int
 
-	// Capture fields for Task 7 methods. Not mutex-guarded because
+	// Captured call arguments. Not mutex-guarded because
 	// withFakeBackend forbids t.Parallel().
 	lastAuthor      string
 	lastTrimTarget  int
@@ -72,10 +72,7 @@ func (f *fakeBackend) OfficeDestroy(officeHandle) {
 	f.destroys++
 }
 
-type fakeDoc struct {
-	be  *fakeBackend
-	url string
-}
+type fakeDoc struct{}
 
 func (*fakeDoc) documentBrand() {}
 
@@ -84,7 +81,7 @@ func (f *fakeBackend) DocumentLoad(_ officeHandle, url string) (documentHandle, 
 		return nil, f.loadErr
 	}
 	f.lastLoadURL = url
-	return &fakeDoc{be: f, url: url}, nil
+	return &fakeDoc{}, nil
 }
 
 func (f *fakeBackend) DocumentLoadWithOptions(_ officeHandle, url, opts string) (documentHandle, error) {
@@ -93,7 +90,7 @@ func (f *fakeBackend) DocumentLoadWithOptions(_ officeHandle, url, opts string) 
 	}
 	f.lastLoadURL = url
 	f.lastLoadOpts = opts
-	return &fakeDoc{be: f, url: url}, nil
+	return &fakeDoc{}, nil
 }
 
 func (f *fakeBackend) DocumentGetType(documentHandle) int { return f.docType }
@@ -110,8 +107,7 @@ func (f *fakeBackend) DocumentSaveAs(d documentHandle, url, format, opts string)
 
 func (f *fakeBackend) DocumentDestroy(documentHandle) {
 	// Not mutex-guarded: withFakeBackend forbids t.Parallel() so
-	// concurrent access is a programmer bug, consistent with the
-	// other capture fields added in Phase 2.
+	// concurrent access is a programmer bug.
 	f.docDestroys++
 }
 

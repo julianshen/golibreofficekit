@@ -18,3 +18,4 @@ coverage.html
 # Go
 *.test
 *.out
+.~lock.*#

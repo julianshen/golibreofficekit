@@ -32,3 +32,9 @@ func (e *LOKError) Error() string {
 // Unwrap returns the wrapped internal error so errors.Is / errors.As
 // can traverse the chain.
 func (e *LOKError) Unwrap() error { return e.err }
+
+// wrapErr builds an *LOKError that carries both a human-readable
+// operation tag and the original error for errors.Is/As traversal.
+func wrapErr(op string, err error) error {
+	return &LOKError{Op: op, Detail: err.Error(), err: err}
+}
