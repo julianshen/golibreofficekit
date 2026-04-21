@@ -50,6 +50,12 @@ func (*Document) Close() error
 
 **Coverage gate:** unchanged at 90% across `./internal/lokc/...` + `./lok/...`.
 
+**Deferred:** `getFilterTypes` / `Office.FilterTypes` appears in the
+spec's §11 coverage matrix under Phase 3 but is not part of §Phase 3's
+API surface. Deferred to a follow-up phase (probably the one that
+first consumes it, e.g. conversion examples in spec §Phase 12). No
+behaviour in Phase 3 depends on it.
+
 **Branching:** `chore/document-load-save`, branched from `main` after
 PR #6 merged.
 
@@ -106,7 +112,10 @@ PR #6 merged.
 
   package lokc
 
-  import "testing"
+  import (
+  	"errors"
+  	"testing"
+  )
 
   func TestDocumentHandle_Nil(t *testing.T) {
   	var d DocumentHandle
@@ -117,11 +126,11 @@ PR #6 merged.
 
   func TestDocumentWrappers_NilAreNoOps(t *testing.T) {
   	var d DocumentHandle
-  	if got := DocumentGetType(d); got != 0 {
-  		t.Errorf("DocumentGetType on nil: got %d, want 0", got)
+  	if got := DocumentGetType(d); got != -1 {
+  		t.Errorf("DocumentGetType on nil: got %d, want -1", got)
   	}
-  	if err := DocumentSaveAs(d, "file:///tmp/x.odt", "", ""); err == nil {
-  		t.Error("DocumentSaveAs on nil must error")
+  	if err := DocumentSaveAs(d, "file:///tmp/x.odt", "", ""); !errors.Is(err, ErrNilDocument) {
+  		t.Errorf("DocumentSaveAs on nil: want ErrNilDocument, got %v", err)
   	}
   	DocumentDestroy(d) // must not panic
   }
@@ -194,6 +203,10 @@ PR #6 merged.
   // ErrSaveFailed is returned when LOK's saveAs returns 0 (false).
   var ErrSaveFailed = errors.New("lokc: saveAs returned failure")
 
+  // ErrNilDocument is returned by document wrappers when the supplied
+  // DocumentHandle is invalid.
+  var ErrNilDocument = errors.New("lokc: document handle is invalid")
+
   // DocumentHandle is an opaque pointer to a LibreOfficeKitDocument*.
   type DocumentHandle struct {
   	p *C.struct__LibreOfficeKitDocument
@@ -230,20 +243,19 @@ PR #6 merged.
   }
 
   // DocumentGetType returns the LOK_DOCTYPE_* integer, or -1 if the
-  // handle or vtable is unavailable.
+  // handle is invalid or the vtable is missing.
   func DocumentGetType(d DocumentHandle) int {
   	if !d.IsValid() {
-  		return 0
+  		return -1
   	}
   	return int(C.go_document_get_type(d.p))
   }
 
   // DocumentSaveAs forwards to pClass->saveAs. Returns ErrSaveFailed
-  // on a zero return from LOK, ErrNilLibrary-style nil-handle error
-  // on an invalid handle.
+  // on a zero return from LOK, ErrNilDocument on an invalid handle.
   func DocumentSaveAs(d DocumentHandle, url, format, filterOptions string) error {
   	if !d.IsValid() {
-  		return ErrNilLibrary // re-used sentinel, semantics match
+  		return ErrNilDocument
   	}
   	curl := C.CString(url)
   	defer C.free(unsafe.Pointer(curl))
@@ -467,8 +479,9 @@ Introduces `Document`, `DocumentType`, `LoadOption` — no public methods yet ex
   }
 
   func (f *fakeBackend) DocumentDestroy(documentHandle) {
-  	f.mu.Lock()
-  	defer f.mu.Unlock()
+  	// Not mutex-guarded: withFakeBackend forbids t.Parallel() so
+  	// concurrent access is a programmer bug, consistent with the
+  	// other capture fields added in Phase 2.
   	f.docDestroys++
   }
   ```
@@ -529,10 +542,14 @@ Introduces `Document`, `DocumentType`, `LoadOption` — no public methods yet ex
   type LoadOption func(*loadOptions)
 
   type loadOptions struct {
-  	password    string
-  	readOnly    bool
-  	lang        string
-  	filterOpts  string // passed as the "options" parameter to documentLoadWithOptions
+  	password          string
+  	readOnly          bool
+  	lang              string
+  	macroSecurity     MacroSecurity
+  	macroSecuritySet  bool
+  	batch             bool
+  	repair            bool
+  	filterOpts        string // verbatim pass-through; caller-formatted
   }
 
   // WithPassword attaches a password for a password-protected document.
@@ -546,14 +563,46 @@ Introduces `Document`, `DocumentType`, `LoadOption` — no public methods yet ex
   	return func(o *loadOptions) { o.readOnly = true }
   }
 
-  // WithLanguage sets the document language tag (e.g. "en-US").
+  // WithLanguage sets the document language tag (e.g. "en-US"). The
+  // value must not contain commas or '=' — those would corrupt the
+  // LOK options string; the implementation rejects such values at
+  // Load time with ErrInvalidOption.
   func WithLanguage(lang string) LoadOption {
   	return func(o *loadOptions) { o.lang = lang }
   }
 
+  // MacroSecurity levels mirror LO's macro-security UI.
+  type MacroSecurity int
+
+  const (
+  	MacroSecurityLowest  MacroSecurity = 0
+  	MacroSecurityMedium  MacroSecurity = 1
+  	MacroSecurityHigh    MacroSecurity = 2 // LO default
+  	MacroSecurityHighest MacroSecurity = 3
+  )
+
+  // WithMacroSecurity sets the macro-security level for the load.
+  func WithMacroSecurity(level MacroSecurity) LoadOption {
+  	return func(o *loadOptions) { o.macroSecurity = level; o.macroSecuritySet = true }
+  }
+
+  // WithBatchMode opens in headless/non-interactive mode: LO will not
+  // prompt for anything, failing loads that would otherwise block on
+  // user input.
+  func WithBatchMode() LoadOption {
+  	return func(o *loadOptions) { o.batch = true }
+  }
+
+  // WithRepair asks LO to attempt to repair a corrupt/truncated
+  // document during load.
+  func WithRepair() LoadOption {
+  	return func(o *loadOptions) { o.repair = true }
+  }
+
   // WithFilterOptions passes raw filter options through to
-  // documentLoadWithOptions. Use for LOK-specific flags not covered
-  // by the typed options above.
+  // documentLoadWithOptions VERBATIM — no escaping, no validation.
+  // The string must already be LOK-formatted (comma-separated
+  // key=value pairs). Prefer the typed With* helpers above.
   func WithFilterOptions(opts string) LoadOption {
   	return func(o *loadOptions) { o.filterOpts = opts }
   }
@@ -670,14 +719,58 @@ func TestLoad_PassesFileURL(t *testing.T) {
 	}
 	t.Cleanup(func() { doc.Close() })
 
-	if !strings.HasPrefix(fb.lastLoadURL, "file://") {
-		t.Errorf("Load URL not file://-prefixed: %q", fb.lastLoadURL)
-	}
-	if !strings.HasSuffix(fb.lastLoadURL, "/tmp/hello.ods") {
-		t.Errorf("Load URL tail wrong: %q", fb.lastLoadURL)
+	// Exact form: file://<absolute path>. Three slashes when the path
+	// starts with / (file://" + "/tmp/..." = "file:///tmp/...").
+	if fb.lastLoadURL != "file:///tmp/hello.ods" {
+		t.Errorf("Load URL: got %q, want file:///tmp/hello.ods", fb.lastLoadURL)
 	}
 	if doc.Type() != TypeSpreadsheet {
 		t.Errorf("Type()=%v, want Spreadsheet", doc.Type())
+	}
+}
+
+func TestLoad_PercentEncodesSpaces(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, err := o.Load("/tmp/has space.odt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	if fb.lastLoadURL != "file:///tmp/has%20space.odt" {
+		t.Errorf("URL: got %q, want file:///tmp/has%%20space.odt", fb.lastLoadURL)
+	}
+}
+
+func TestComposeLoadOptions(t *testing.T) {
+	cases := []struct {
+		name string
+		in   loadOptions
+		want string
+		err  error
+	}{
+		{"empty", loadOptions{}, "", nil},
+		{"readonly", loadOptions{readOnly: true}, "ReadOnly=1", nil},
+		{"lang", loadOptions{lang: "en-US"}, "Language=en-US", nil},
+		{"macro", loadOptions{macroSecurity: MacroSecurityMedium, macroSecuritySet: true}, "MacroSecurityLevel=1", nil},
+		{"batch+repair", loadOptions{batch: true, repair: true}, "Batch=1,Repair=1", nil},
+		{"filter pass-through", loadOptions{filterOpts: "SkipImages=1"}, "SkipImages=1", nil},
+		{"combined", loadOptions{readOnly: true, lang: "de-DE", filterOpts: "X=1"}, "ReadOnly=1,Language=de-DE,X=1", nil},
+		{"lang with comma errors", loadOptions{lang: "en,US"}, "", ErrInvalidOption},
+		{"lang with equals errors", loadOptions{lang: "en=US"}, "", ErrInvalidOption},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := composeLoadOptions(tc.in)
+			if !errors.Is(err, tc.err) {
+				t.Errorf("err: got %v, want %v", err, tc.err)
+			}
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -752,7 +845,10 @@ Expect build errors for `Load`, `Close`, `ErrPathRequired`.
 
 Add to `lok/errors.go`:
 ```go
-var ErrPathRequired = errors.New("lok: document path is required")
+var (
+	ErrPathRequired  = errors.New("lok: document path is required")
+	ErrInvalidOption = errors.New("lok: invalid load option (contains reserved character)")
+)
 ```
 
 Add to `lok/document.go`:
@@ -787,7 +883,10 @@ func (o *Office) Load(path string, opts ...LoadOption) (*Document, error) {
 		o.be.OfficeSetDocumentPassword(o.h, fileURL, lo.password)
 	}
 
-	optsStr := composeLoadOptions(lo)
+	optsStr, err := composeLoadOptions(lo)
+	if err != nil {
+		return nil, err
+	}
 	var h documentHandle
 	if optsStr != "" {
 		h, err = o.be.DocumentLoadWithOptions(o.h, fileURL, optsStr)
@@ -807,17 +906,23 @@ func (o *Office) Load(path string, opts ...LoadOption) (*Document, error) {
 }
 
 // composeLoadOptions turns the typed LoadOption values into the raw
-// options string LOK accepts at documentLoadWithOptions.
+// options string LOK accepts at documentLoadWithOptions. LOK parses
+// the string as comma-separated key=value pairs.
 //
 // Supported tokens:
 //   - "ReadOnly=1"
 //   - "Language=<tag>"
-//   - raw filterOpts appended verbatim if set
+//   - "MacroSecurityLevel=<N>"
+//   - "Batch=1"
+//   - "Repair=1"
+//   - raw filterOpts appended verbatim if set (caller-formatted)
 //
-// LOK accepts comma-separated key=value pairs. If no typed option is
-// set and filterOpts is empty, the returned string is "" and the
-// caller uses the simpler documentLoad instead.
-func composeLoadOptions(lo loadOptions) string {
+// Returns ("", nil) when nothing needs documentLoadWithOptions.
+// Returns ("", ErrInvalidOption) if lang contains a reserved char.
+func composeLoadOptions(lo loadOptions) (string, error) {
+	if strings.ContainsAny(lo.lang, ",=") {
+		return "", ErrInvalidOption
+	}
 	var parts []string
 	if lo.readOnly {
 		parts = append(parts, "ReadOnly=1")
@@ -825,13 +930,22 @@ func composeLoadOptions(lo loadOptions) string {
 	if lo.lang != "" {
 		parts = append(parts, "Language="+lo.lang)
 	}
+	if lo.macroSecuritySet {
+		parts = append(parts, fmt.Sprintf("MacroSecurityLevel=%d", lo.macroSecurity))
+	}
+	if lo.batch {
+		parts = append(parts, "Batch=1")
+	}
+	if lo.repair {
+		parts = append(parts, "Repair=1")
+	}
 	if lo.filterOpts != "" {
 		parts = append(parts, lo.filterOpts)
 	}
 	if len(parts) == 0 {
-		return ""
+		return "", nil
 	}
-	return strings.Join(parts, ",")
+	return strings.Join(parts, ","), nil
 }
 
 // Close destroys the LOK document handle and cleans up any temp file
@@ -987,24 +1101,16 @@ func (d *Document) SaveAs(path, format, filterOpts string) error {
 
 // Save re-saves the document to its original URL. LOK has no
 // dedicated save() vtable entry, so Save is implemented as saveAs
-// to origURL with no format/filter changes.
+// to origURL with no format/filter changes. Single critical section
+// — sync.Mutex is non-reentrant, so the implementation must not call
+// d.SaveAs from inside this method.
 func (d *Document) Save() error {
-	d.office.mu.Lock()
-	origURL := d.origURL
-	closed := d.closed
-	d.office.mu.Unlock()
-	if closed {
-		return ErrClosed
-	}
-	// Re-lock inside SaveAs logic by calling through the backend
-	// directly. Keep origURL conversion out — it's already a file://
-	// URL from Load.
 	d.office.mu.Lock()
 	defer d.office.mu.Unlock()
 	if d.closed {
 		return ErrClosed
 	}
-	if err := d.office.be.DocumentSaveAs(d.h, origURL, "", ""); err != nil {
+	if err := d.office.be.DocumentSaveAs(d.h, d.origURL, "", ""); err != nil {
 		return &LOKError{Op: "Save", Detail: err.Error(), err: err}
 	}
 	return nil
@@ -1155,7 +1261,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 - Create: `testdata/hello.odt`
 - Modify: `lok/integration_test.go`
 
-### Step 1: Commit a tiny ODT fixture
+### Step 1: Commit a tiny ODT fixture + README
 
 Produce a minimal ODT locally (one-time) with:
 ```bash
@@ -1167,7 +1273,21 @@ Verify ≤ 4 KB:
 wc -c testdata/hello.odt
 ```
 
-Commit as binary.
+Also write `testdata/README.md`:
+```markdown
+# testdata
+
+Fixtures used by integration tests (behind the `lok_integration`
+build tag).
+
+- `hello.odt` — trivial Writer document, "Hello from Phase 3."
+
+Regenerate only if the file corrupts; LO version drift may change
+bytes but the tests only check type and non-empty output, so exact
+byte-identity is not required.
+```
+
+Commit both as binary.
 
 ### Step 2: Extend `TestIntegration_FullLifecycle`
 
@@ -1231,7 +1351,7 @@ Expected: `TestIntegration_FullLifecycle` passes end-to-end.
 ### Step 4: Commit
 
 ```bash
-git add testdata/hello.odt lok/integration_test.go
+git add testdata/hello.odt testdata/README.md lok/integration_test.go
 git commit -m "test(lok): integration tests for document load/save/type
 
 Commits a tiny ODT fixture (testdata/hello.odt) and extends
