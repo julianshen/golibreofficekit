@@ -21,8 +21,12 @@ build:
 test:
 	$(GO) test -race $(GOFLAGS) $(PKG)
 
+# GODEBUG=asyncpreemptoff=1: Go 1.14+ async preemption via SIGURG
+# interacts with LibreOffice's non-SA_ONSTACK signal handlers and
+# crashes the runtime. Disabling async preemption is the only
+# reliable workaround for LO integration tests.
 test-integration:
-	$(GO) test -tags=$(INTEGRATION_TAG) $(GOFLAGS) $(PKG)
+	GODEBUG=asyncpreemptoff=1 $(GO) test -tags=$(INTEGRATION_TAG) $(GOFLAGS) $(PKG)
 
 cover:
 	$(GO) test -covermode=atomic -coverprofile=$(COVER_OUT) $(PKG)

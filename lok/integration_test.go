@@ -3,19 +3,24 @@
 package lok
 
 import (
+	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// Known flake: running the full integration suite can crash with
-// `fatal error: non-Go code set up signal handler without SA_ONSTACK
-// flag`. LibreOffice installs SIGWINCH/SIGPIPE handlers that lack
-// SA_ONSTACK; Go's runtime aborts when either signal fires. No
-// Go-side workaround is fully reliable. Running this test in
-// isolation (`-run TestIntegration_FullLifecycle`) is deterministic;
-// re-run the suite if you hit the crash. CI does not run integration
-// (LOK_PATH unset), so the flake doesn't gate merges.
+// LibreOffice installs SIGWINCH/SIGPIPE signal handlers that lack
+// SA_ONSTACK. Go 1.14+ async preemption (which uses SIGURG to force
+// goroutine preemption) interacts with that and aborts the runtime
+// with "non-Go code set up signal handler without SA_ONSTACK flag".
+// The Makefile's test-integration target sets GODEBUG=asyncpreemptoff=1
+// to disable async preemption for the duration of the test run, which
+// avoids the crash deterministically. Run this test via
+//   make test-integration
+// NOT
+//   go test -tags=lok_integration ./...
+// unless you set GODEBUG=asyncpreemptoff=1 yourself.
 
 // TestIntegration_FullLifecycle exercises New → VersionInfo →
 // SetAuthor → SetOptionalFeatures → TrimMemory → DumpState → Close
@@ -59,5 +64,50 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	}
 	if _, err := o.DumpState(); err != nil {
 		t.Errorf("DumpState: %v", err)
+	}
+
+	// --- Phase 3 document round-trip ---
+
+	fixture, err := filepath.Abs("../testdata/hello.odt")
+	if err != nil {
+		t.Fatalf("Abs: %v", err)
+	}
+	doc, err := o.Load(fixture)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	t.Cleanup(func() { doc.Close() })
+
+	if got := doc.Type(); got != TypeText {
+		t.Errorf("Type()=%v, want Text", got)
+	}
+
+	outDir := t.TempDir()
+	outPath := filepath.Join(outDir, "roundtrip.odt")
+	if err := doc.SaveAs(outPath, "odt", ""); err != nil {
+		t.Errorf("SaveAs: %v", err)
+	}
+	if st, err := os.Stat(outPath); err != nil {
+		t.Errorf("SaveAs output missing: %v", err)
+	} else if st.Size() == 0 {
+		t.Error("SaveAs output is zero bytes")
+	}
+
+	pdfPath := filepath.Join(outDir, "out.pdf")
+	if err := doc.SaveAs(pdfPath, "pdf", ""); err != nil {
+		t.Errorf("SaveAs pdf: %v", err)
+	}
+
+	data, err := os.ReadFile(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc2, err := o.LoadFromReader(bytes.NewReader(data), "odt")
+	if err != nil {
+		t.Fatalf("LoadFromReader: %v", err)
+	}
+	defer doc2.Close()
+	if got := doc2.Type(); got != TypeText {
+		t.Errorf("reader-loaded Type()=%v, want Text", got)
 	}
 }
