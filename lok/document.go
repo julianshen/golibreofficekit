@@ -47,8 +47,9 @@ func (t DocumentType) String() string {
 type Document struct {
 	office    *Office
 	h         documentHandle
-	origURL   string // cached for Save()
-	tempPath  string // non-empty when created by LoadFromReader
+	origURL   string       // cached for Save()
+	docType   DocumentType // cached at Load to avoid a per-call backend round-trip
+	tempPath  string       // non-empty when created by LoadFromReader
 	closeOnce sync.Once
 	closed    bool
 }
@@ -68,7 +69,8 @@ type loadOptions struct {
 }
 
 // WithPassword attaches a password for a password-protected document.
-// Wired through Office.SetDocumentPassword before the load call.
+// Wired through Office.SetDocumentPassword after the options are
+// validated and before the load call.
 func WithPassword(pw string) LoadOption {
 	return func(o *loadOptions) { o.password = pw }
 }
@@ -130,6 +132,17 @@ func buildLoadOptions(opts []LoadOption) loadOptions {
 	return lo
 }
 
+// pathToFileURL resolves path to an absolute file:// URL suitable
+// for LOK. Errors from filepath.Abs are wrapped with op so call
+// sites don't repeat the boilerplate.
+func pathToFileURL(op, path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", wrapErr(op, err)
+	}
+	return (&url.URL{Scheme: "file", Path: abs}).String(), nil
+}
+
 // Load opens a document from the filesystem. The path is converted
 // to a file:// URL before being passed to LOK. Variadic options
 // switch to documentLoadWithOptions when any option that needs the
@@ -144,11 +157,10 @@ func (o *Office) Load(path string, opts ...LoadOption) (*Document, error) {
 		return nil, ErrClosed
 	}
 
-	abs, err := filepath.Abs(path)
+	fileURL, err := pathToFileURL("Load", path)
 	if err != nil {
-		return nil, &LOKError{Op: "Load", Detail: err.Error(), err: err}
+		return nil, err
 	}
-	fileURL := (&url.URL{Scheme: "file", Path: abs}).String()
 
 	lo := buildLoadOptions(opts)
 
@@ -173,12 +185,12 @@ func (o *Office) Load(path string, opts ...LoadOption) (*Document, error) {
 		return nil, err
 	}
 
-	doc := &Document{
+	return &Document{
 		office:  o,
 		h:       h,
 		origURL: fileURL,
-	}
-	return doc, nil
+		docType: DocumentType(o.be.DocumentGetType(h)),
+	}, nil
 }
 
 // composeLoadOptions turns the typed LoadOption values into the raw
@@ -230,14 +242,17 @@ func (d *Document) Close() error {
 	return nil
 }
 
-// Type returns the document's LOK type, or TypeOther on a closed doc.
+// Type returns the document's LOK type. The value is cached at Load
+// (document type is immutable post-load), so Type doesn't round-trip
+// through the backend. Returns TypeOther on a closed document. The
+// Office mutex is still acquired so the d.closed read is race-free.
 func (d *Document) Type() DocumentType {
 	d.office.mu.Lock()
 	defer d.office.mu.Unlock()
 	if d.closed {
 		return TypeOther
 	}
-	return DocumentType(d.office.be.DocumentGetType(d.h))
+	return d.docType
 }
 
 // SaveAs writes the document to path in the given LO format (e.g.
@@ -254,13 +269,12 @@ func (d *Document) SaveAs(path, format, filterOpts string) error {
 	if d.closed {
 		return ErrClosed
 	}
-	abs, err := filepath.Abs(path)
+	fileURL, err := pathToFileURL("SaveAs", path)
 	if err != nil {
-		return &LOKError{Op: "SaveAs", Detail: err.Error(), err: err}
+		return err
 	}
-	fileURL := (&url.URL{Scheme: "file", Path: abs}).String()
 	if err := d.office.be.DocumentSaveAs(d.h, fileURL, format, filterOpts); err != nil {
-		return &LOKError{Op: "SaveAs", Detail: err.Error(), err: err}
+		return wrapErr("SaveAs", err)
 	}
 	return nil
 }
@@ -277,7 +291,7 @@ func (d *Document) Save() error {
 		return ErrClosed
 	}
 	if err := d.office.be.DocumentSaveAs(d.h, d.origURL, "", ""); err != nil {
-		return &LOKError{Op: "Save", Detail: err.Error(), err: err}
+		return wrapErr("Save", err)
 	}
 	return nil
 }
@@ -296,17 +310,17 @@ func (o *Office) LoadFromReader(r io.Reader, filter string, opts ...LoadOption) 
 	}
 	f, err := os.CreateTemp("", "lokdoc-*"+suffix)
 	if err != nil {
-		return nil, &LOKError{Op: "LoadFromReader", Detail: err.Error(), err: err}
+		return nil, wrapErr("LoadFromReader", err)
 	}
 	tempPath := f.Name()
 	if _, err := io.Copy(f, r); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tempPath)
-		return nil, &LOKError{Op: "LoadFromReader", Detail: err.Error(), err: err}
+		return nil, wrapErr("LoadFromReader", err)
 	}
 	if err := f.Close(); err != nil {
 		_ = os.Remove(tempPath)
-		return nil, &LOKError{Op: "LoadFromReader", Detail: err.Error(), err: err}
+		return nil, wrapErr("LoadFromReader", err)
 	}
 	doc, err := o.Load(tempPath, opts...)
 	if err != nil {

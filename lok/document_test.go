@@ -95,7 +95,7 @@ func TestDocument_Type_Closed(t *testing.T) {
 	}
 	defer o.Close()
 
-	d := &Document{office: o, h: &fakeDoc{be: fb}, closed: true}
+	d := &Document{office: o, h: &fakeDoc{}, closed: true}
 	if got := d.Type(); got != TypeOther {
 		t.Errorf("closed doc Type=%v, want TypeOther", got)
 	}
@@ -110,8 +110,15 @@ func TestDocument_Type_Open(t *testing.T) {
 	}
 	defer o.Close()
 
-	d := &Document{office: o, h: &fakeDoc{be: fb}, closed: false}
-	if got := d.Type(); got != TypeSpreadsheet {
+	// Document.Type returns the value cached at Load time; go through
+	// the Load path rather than constructing a bare Document so the
+	// cache is populated.
+	doc, err := o.Load("/tmp/x.ods")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	if got := doc.Type(); got != TypeSpreadsheet {
 		t.Errorf("open doc Type=%v, want TypeSpreadsheet", got)
 	}
 }

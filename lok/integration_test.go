@@ -66,8 +66,6 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 		t.Errorf("DumpState: %v", err)
 	}
 
-	// --- Phase 3 document round-trip ---
-
 	fixture, err := filepath.Abs("../testdata/hello.odt")
 	if err != nil {
 		t.Fatalf("Abs: %v", err)
