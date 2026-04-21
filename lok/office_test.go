@@ -46,12 +46,12 @@ func (f *fakeBackend) InvokeHook(lib libraryHandle, _ string) (officeHandle, err
 	}
 	return &fakeOffice{be: f}, nil
 }
-func (f *fakeBackend) OfficeGetError(officeHandle) string                     { return "" }
-func (f *fakeBackend) OfficeGetVersionInfo(officeHandle) string               { return f.version }
-func (f *fakeBackend) OfficeSetOptionalFeatures(officeHandle, uint64)         {}
-func (f *fakeBackend) OfficeSetAuthor(_ officeHandle, s string)    { f.lastAuthor = s }
-func (f *fakeBackend) OfficeTrimMemory(_ officeHandle, n int)      { f.lastTrimTarget = n }
-func (f *fakeBackend) OfficeDumpState(_ officeHandle) string       { return f.dumpStateOut }
+func (f *fakeBackend) OfficeGetError(officeHandle) string             { return "" }
+func (f *fakeBackend) OfficeGetVersionInfo(officeHandle) string       { return f.version }
+func (f *fakeBackend) OfficeSetOptionalFeatures(officeHandle, uint64) {}
+func (f *fakeBackend) OfficeSetAuthor(_ officeHandle, s string)       { f.lastAuthor = s }
+func (f *fakeBackend) OfficeTrimMemory(_ officeHandle, n int)         { f.lastTrimTarget = n }
+func (f *fakeBackend) OfficeDumpState(_ officeHandle) string          { return f.dumpStateOut }
 func (f *fakeBackend) OfficeSetDocumentPassword(_ officeHandle, url, pwd string) {
 	f.lastPwdURL = url
 	f.lastPwdPassword = pwd
