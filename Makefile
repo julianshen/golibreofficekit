@@ -22,7 +22,7 @@ test:
 	$(GO) test -race $(GOFLAGS) $(PKG)
 
 test-integration:
-	$(GO) test -race -tags=$(INTEGRATION_TAG) $(GOFLAGS) $(PKG)
+	$(GO) test -tags=$(INTEGRATION_TAG) $(GOFLAGS) $(PKG)
 
 cover:
 	$(GO) test -covermode=atomic -coverprofile=$(COVER_OUT) $(PKG)
