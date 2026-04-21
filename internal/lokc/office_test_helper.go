@@ -49,25 +49,30 @@ import "C"
 
 import "unsafe"
 
-// newFakeOfficeHandle returns an OfficeHandle backed by a calloc'd
+// NewFakeOfficeHandle returns an OfficeHandle backed by a calloc'd
 // zeroed LibreOfficeKit. The wrappers treat pClass == NULL as a
 // vtable-not-present signal and early-return in C, so every tested
 // operation is a no-op at the C layer while exercising the Go path.
-// The caller must call freeFakeOfficeHandle to reclaim the allocation.
-func newFakeOfficeHandle() OfficeHandle {
+// The caller must call FreeFakeOfficeHandle to reclaim the allocation.
+//
+// Exported for the benefit of tests in the public lok package; the
+// identifier stays invisible outside the module because lokc lives
+// under internal/.
+func NewFakeOfficeHandle() OfficeHandle {
 	return OfficeHandle{p: C.newFakeLOK()}
 }
 
-func freeFakeOfficeHandle(h OfficeHandle) {
+// FreeFakeOfficeHandle releases the backing LibreOfficeKit.
+func FreeFakeOfficeHandle(h OfficeHandle) {
 	if h.p != nil {
 		C.freeFakeLOK(h.p)
 	}
 }
 
-// newFakeLibrary returns a Library whose hookSymbol points at a C
+// NewFakeLibrary returns a Library whose hookSymbol points at a C
 // helper that returns a zeroed LibreOfficeKit (never the real LOK).
 // version must be 1 or 2.
-func newFakeLibrary(version int) *Library {
+func NewFakeLibrary(version int) *Library {
 	return &Library{
 		installPath: "/fake/install",
 		hookSymbol:  unsafe.Pointer(C.fakeHookPtr(C.int(version))),
@@ -75,9 +80,9 @@ func newFakeLibrary(version int) *Library {
 	}
 }
 
-// newFakeLibraryNullReturn returns a Library whose hook always returns
+// NewFakeLibraryNullReturn returns a Library whose hook always returns
 // NULL; useful for testing InvokeHook's "hook returned NULL" path.
-func newFakeLibraryNullReturn() *Library {
+func NewFakeLibraryNullReturn() *Library {
 	return &Library{
 		installPath: "/fake/install",
 		hookSymbol:  unsafe.Pointer(C.fakeHookNullReturnPtr()),

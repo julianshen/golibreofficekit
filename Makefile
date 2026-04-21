@@ -53,7 +53,7 @@ clean:
 	rm -f $(COVER_OUT) $(COVER_HTML)
 
 # Coverage gate. Append packages to COVER_GATE_PKGS as they are added.
-COVER_GATE_PKGS := ./internal/lokc/...
+COVER_GATE_PKGS := ./internal/lokc/... ./lok/...
 COVER_GATE_MIN  := 90.0
 
 .PHONY: cover-gate

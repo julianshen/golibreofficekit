@@ -22,7 +22,7 @@ func TestOfficeHandle_Nil(t *testing.T) {
 }
 
 func TestInvokeHook_Hook2Path(t *testing.T) {
-	lib := newFakeLibrary(2)
+	lib := NewFakeLibrary(2)
 	h, err := InvokeHook(lib, "file:///tmp/profile")
 	if err != nil {
 		t.Fatalf("InvokeHook: %v", err)
@@ -30,11 +30,11 @@ func TestInvokeHook_Hook2Path(t *testing.T) {
 	if !h.IsValid() {
 		t.Fatal("OfficeHandle invalid after successful fake hook")
 	}
-	freeFakeOfficeHandle(h)
+	FreeFakeOfficeHandle(h)
 }
 
 func TestInvokeHook_Hook1Path(t *testing.T) {
-	lib := newFakeLibrary(1)
+	lib := NewFakeLibrary(1)
 	h, err := InvokeHook(lib, "")
 	if err != nil {
 		t.Fatalf("InvokeHook: %v", err)
@@ -42,11 +42,11 @@ func TestInvokeHook_Hook1Path(t *testing.T) {
 	if !h.IsValid() {
 		t.Fatal("OfficeHandle invalid after successful fake hook")
 	}
-	freeFakeOfficeHandle(h)
+	FreeFakeOfficeHandle(h)
 }
 
 func TestInvokeHook_NullReturnIsError(t *testing.T) {
-	lib := newFakeLibraryNullReturn()
+	lib := NewFakeLibraryNullReturn()
 	_, err := InvokeHook(lib, "")
 	if err == nil {
 		t.Fatal("expected error when hook returns NULL")
@@ -69,8 +69,8 @@ func TestLOKError_Error(t *testing.T) {
 // call a safe no-op while every Go statement (nil-check, CString,
 // free, cgo call, copyAndFree) runs.
 func TestOfficeWrappers_FakeHandle(t *testing.T) {
-	h := newFakeOfficeHandle()
-	t.Cleanup(func() { freeFakeOfficeHandle(h) })
+	h := NewFakeOfficeHandle()
+	t.Cleanup(func() { FreeFakeOfficeHandle(h) })
 
 	if got := OfficeGetError(h); got != "" {
 		t.Errorf("OfficeGetError on fake: %q, want empty", got)
