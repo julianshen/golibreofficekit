@@ -221,6 +221,106 @@ func TestDocument_Close_Idempotent(t *testing.T) {
 	}
 }
 
+func TestSaveAs_PassesFileURL(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	if err := doc.SaveAs("/tmp/x.pdf", "pdf", "SkipImages=1"); err != nil {
+		t.Fatal(err)
+	}
+	if fb.lastSaveURL != "file:///tmp/x.pdf" {
+		t.Errorf("SaveAs URL: %q", fb.lastSaveURL)
+	}
+	if fb.lastSaveFmt != "pdf" {
+		t.Errorf("SaveAs format: %q", fb.lastSaveFmt)
+	}
+	if fb.lastSaveOpts != "SkipImages=1" {
+		t.Errorf("SaveAs opts: %q", fb.lastSaveOpts)
+	}
+}
+
+func TestSaveAs_EmptyPathErrors(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+	if err := doc.SaveAs("", "", ""); !errors.Is(err, ErrPathRequired) {
+		t.Errorf("want ErrPathRequired, got %v", err)
+	}
+}
+
+func TestSaveAs_BackendError(t *testing.T) {
+	synth := errors.New("synthetic save")
+	fb := &fakeBackend{saveErr: synth}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+	err := doc.SaveAs("/tmp/x.pdf", "pdf", "")
+	if !errors.Is(err, synth) {
+		t.Errorf("want synthetic via Unwrap, got %v", err)
+	}
+}
+
+func TestSaveAs_AfterCloseErrors(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	doc.Close()
+	if err := doc.SaveAs("/tmp/x.pdf", "pdf", ""); !errors.Is(err, ErrClosed) {
+		t.Errorf("want ErrClosed, got %v", err)
+	}
+}
+
+func TestSave_ReusesOrigURL(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+	if err := doc.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if fb.lastSaveURL != doc.origURL {
+		t.Errorf("Save: URL=%q, want %q", fb.lastSaveURL, doc.origURL)
+	}
+	if fb.lastSaveFmt != "" {
+		t.Errorf("Save: format should be empty, got %q", fb.lastSaveFmt)
+	}
+}
+
+func TestSave_AfterCloseErrors(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	doc.Close()
+	if err := doc.Save(); !errors.Is(err, ErrClosed) {
+		t.Errorf("want ErrClosed, got %v", err)
+	}
+}
+
+func TestSave_BackendError(t *testing.T) {
+	synth := errors.New("synthetic save via Save")
+	fb := &fakeBackend{saveErr: synth}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+	if err := doc.Save(); !errors.Is(err, synth) {
+		t.Errorf("want synthetic via Unwrap, got %v", err)
+	}
+}
+
 func TestComposeLoadOptions(t *testing.T) {
 	cases := []struct {
 		name string
