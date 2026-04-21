@@ -122,3 +122,54 @@ func buildOptions(opts []Option) options {
 	}
 	return o
 }
+
+// SetAuthor sets LibreOffice's author metadata via setOption("Author", ...).
+// Returns ErrClosed if the Office has been closed.
+func (o *Office) SetAuthor(author string) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.closed {
+		return ErrClosed
+	}
+	o.be.OfficeSetAuthor(o.h, author)
+	return nil
+}
+
+// TrimMemory forwards to LOK's trimMemory with the caller's target
+// level. Returns ErrClosed if the Office has been closed.
+func (o *Office) TrimMemory(target int) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.closed {
+		return ErrClosed
+	}
+	o.be.OfficeTrimMemory(o.h, target)
+	return nil
+}
+
+// DumpState returns LO's internal state dump. Returns ErrClosed if
+// the Office has been closed.
+func (o *Office) DumpState() (string, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.closed {
+		return "", ErrClosed
+	}
+	return o.be.OfficeDumpState(o.h), nil
+}
+
+// SetDocumentPassword preloads the password for a document URL that
+// will be opened next. Returns ErrClosed if the Office has been
+// closed and *LOKError with Op="SetDocumentPassword" if url is empty.
+func (o *Office) SetDocumentPassword(url, password string) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.closed {
+		return ErrClosed
+	}
+	if url == "" {
+		return &LOKError{Op: "SetDocumentPassword", Detail: "url is required"}
+	}
+	o.be.OfficeSetDocumentPassword(o.h, url, password)
+	return nil
+}
