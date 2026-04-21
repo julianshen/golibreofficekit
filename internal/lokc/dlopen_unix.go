@@ -36,9 +36,17 @@ import (
 	"unsafe"
 )
 
+// DLOp identifies which libc call produced a DLError.
+type DLOp string
+
+const (
+	OpDLOpen DLOp = "dlopen"
+	OpDLSym  DLOp = "dlsym"
+)
+
 // DLError is returned when dlopen or dlsym fails.
 type DLError struct {
-	Op     string // "dlopen" or "dlsym"
+	Op     DLOp
 	Target string // path for dlopen, symbol name for dlsym
 	Detail string // dlerror() output
 }
@@ -61,7 +69,7 @@ func dlOpen(path string) (unsafe.Pointer, error) {
 
 	handle := C.go_dlopen(cpath, C.RTLD_LAZY)
 	if handle == nil {
-		return nil, &DLError{Op: "dlopen", Target: path, Detail: lastDLError()}
+		return nil, &DLError{Op: OpDLOpen, Target: path, Detail: lastDLError()}
 	}
 	return unsafe.Pointer(handle), nil
 }
@@ -69,14 +77,14 @@ func dlOpen(path string) (unsafe.Pointer, error) {
 // dlSym resolves a symbol in a handle obtained from dlOpen.
 func dlSym(handle unsafe.Pointer, symbol string) (unsafe.Pointer, error) {
 	if handle == nil {
-		return nil, &DLError{Op: "dlsym", Target: symbol, Detail: "handle is nil"}
+		return nil, &DLError{Op: OpDLSym, Target: symbol, Detail: "handle is nil"}
 	}
 	csym := C.CString(symbol)
 	defer C.free(unsafe.Pointer(csym))
 
 	ptr := C.go_dlsym(handle, csym)
 	if ptr == nil {
-		return nil, &DLError{Op: "dlsym", Target: symbol, Detail: lastDLError()}
+		return nil, &DLError{Op: OpDLSym, Target: symbol, Detail: lastDLError()}
 	}
 	return unsafe.Pointer(ptr), nil
 }
