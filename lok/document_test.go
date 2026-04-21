@@ -2,7 +2,10 @@
 
 package lok
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestDocumentType_String(t *testing.T) {
 	cases := []struct {
@@ -107,5 +110,143 @@ func TestDocument_Type_Open(t *testing.T) {
 	d := &Document{office: o, h: &fakeDoc{be: fb}, closed: false}
 	if got := d.Type(); got != TypeSpreadsheet {
 		t.Errorf("open doc Type=%v, want TypeSpreadsheet", got)
+	}
+}
+
+func TestLoad_EmptyPathErrors(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, err := New("/install")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer o.Close()
+	if _, err := o.Load(""); !errors.Is(err, ErrPathRequired) {
+		t.Errorf("want ErrPathRequired, got %v", err)
+	}
+}
+
+func TestLoad_PassesFileURL(t *testing.T) {
+	fb := &fakeBackend{docType: int(TypeSpreadsheet)}
+	withFakeBackend(t, fb)
+	o, err := New("/install")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer o.Close()
+
+	doc, err := o.Load("/tmp/hello.ods")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	t.Cleanup(func() { doc.Close() })
+
+	if fb.lastLoadURL != "file:///tmp/hello.ods" {
+		t.Errorf("Load URL: got %q, want file:///tmp/hello.ods", fb.lastLoadURL)
+	}
+	if doc.Type() != TypeSpreadsheet {
+		t.Errorf("Type()=%v, want Spreadsheet", doc.Type())
+	}
+}
+
+func TestLoad_PercentEncodesSpaces(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, err := o.Load("/tmp/has space.odt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	if fb.lastLoadURL != "file:///tmp/has%20space.odt" {
+		t.Errorf("URL: got %q, want file:///tmp/has%%20space.odt", fb.lastLoadURL)
+	}
+}
+
+func TestLoad_WithOptions_UsesLoadWithOptions(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+
+	doc, err := o.Load("/tmp/x.odt", WithPassword("hunter2"), WithReadOnly())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	if fb.lastPwdPassword != "hunter2" {
+		t.Error("password not forwarded to SetDocumentPassword")
+	}
+	if fb.lastLoadOpts == "" {
+		t.Error("LoadWithOptions not invoked for options case")
+	}
+}
+
+func TestLoad_BackendError(t *testing.T) {
+	errSynth := errors.New("synthetic")
+	fb := &fakeBackend{loadErr: errSynth}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	_, err := o.Load("/tmp/x.odt")
+	if !errors.Is(err, errSynth) {
+		t.Errorf("want synthetic, got %v", err)
+	}
+}
+
+func TestLoad_InvalidLanguageOption(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	_, err := o.Load("/tmp/x.odt", WithLanguage("en,US"))
+	if !errors.Is(err, ErrInvalidOption) {
+		t.Errorf("want ErrInvalidOption, got %v", err)
+	}
+}
+
+func TestDocument_Close_Idempotent(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	if err := doc.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.Close(); err != nil {
+		t.Error(err)
+	}
+	if fb.docDestroys != 1 {
+		t.Errorf("docDestroys: want 1, got %d", fb.docDestroys)
+	}
+}
+
+func TestComposeLoadOptions(t *testing.T) {
+	cases := []struct {
+		name string
+		in   loadOptions
+		want string
+		err  error
+	}{
+		{"empty", loadOptions{}, "", nil},
+		{"readonly", loadOptions{readOnly: true}, "ReadOnly=1", nil},
+		{"lang", loadOptions{lang: "en-US"}, "Language=en-US", nil},
+		{"macro", loadOptions{macroSecurity: MacroSecurityMedium, macroSecuritySet: true}, "MacroSecurityLevel=1", nil},
+		{"batch+repair", loadOptions{batch: true, repair: true}, "Batch=1,Repair=1", nil},
+		{"filter pass-through", loadOptions{filterOpts: "SkipImages=1"}, "SkipImages=1", nil},
+		{"combined", loadOptions{readOnly: true, lang: "de-DE", filterOpts: "X=1"}, "ReadOnly=1,Language=de-DE,X=1", nil},
+		{"lang with comma errors", loadOptions{lang: "en,US"}, "", ErrInvalidOption},
+		{"lang with equals errors", loadOptions{lang: "en=US"}, "", ErrInvalidOption},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := composeLoadOptions(tc.in)
+			if !errors.Is(err, tc.err) {
+				t.Errorf("err: got %v, want %v", err, tc.err)
+			}
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
