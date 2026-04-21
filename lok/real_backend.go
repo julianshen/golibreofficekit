@@ -74,3 +74,7 @@ func must(h officeHandle) realOfficeHandle {
 	}
 	return rh
 }
+
+func init() {
+	setBackend(realBackend{})
+}
