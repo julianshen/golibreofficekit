@@ -9,7 +9,7 @@ import (
 )
 
 func TestDLError_ErrorMessage(t *testing.T) {
-	err := &DLError{Op: "dlopen", Target: "/no/such.so", Detail: "not found"}
+	err := &DLError{Op: OpDLOpen, Target: "/no/such.so", Detail: "not found"}
 	got := err.Error()
 	for _, want := range []string{"dlopen", "/no/such.so", "not found"} {
 		if !strings.Contains(got, want) {
@@ -27,8 +27,8 @@ func TestDLOpen_MissingFileReturnsError(t *testing.T) {
 	if !errors.As(err, &dlerr) {
 		t.Fatalf("expected *DLError, got %T (%v)", err, err)
 	}
-	if dlerr.Op != "dlopen" {
-		t.Errorf("Op: want %q, got %q", "dlopen", dlerr.Op)
+	if dlerr.Op != OpDLOpen {
+		t.Errorf("Op: want %q, got %q", OpDLOpen, dlerr.Op)
 	}
 }
 
@@ -65,8 +65,8 @@ func TestDLSym_NilHandleErrors(t *testing.T) {
 		t.Fatal("expected error for nil handle")
 	}
 	var dlerr *DLError
-	if !errors.As(err, &dlerr) || dlerr.Op != "dlsym" {
-		t.Errorf("want *DLError Op=dlsym, got %T %v", err, err)
+	if !errors.As(err, &dlerr) || dlerr.Op != OpDLSym {
+		t.Errorf("want *DLError Op=%q, got %T %v", OpDLSym, err, err)
 	}
 }
 

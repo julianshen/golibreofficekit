@@ -24,8 +24,8 @@ func TestOpenLibrary_MissingFileErrors(t *testing.T) {
 		t.Fatal("expected error for missing install dir")
 	}
 	var dlerr *DLError
-	if !errors.As(err, &dlerr) || dlerr.Op != "dlopen" {
-		t.Errorf("want *DLError Op=dlopen, got %T %v", err, err)
+	if !errors.As(err, &dlerr) || dlerr.Op != OpDLOpen {
+		t.Errorf("want *DLError Op=%q, got %T %v", OpDLOpen, err, err)
 	}
 }
 
@@ -69,8 +69,8 @@ func TestOpenLibrary_MissingHookSymbolErrors(t *testing.T) {
 		t.Fatal("expected error for .so without hook symbols")
 	}
 	var dlerr *DLError
-	if !errors.As(err, &dlerr) || dlerr.Op != "dlsym" {
-		t.Errorf("want *DLError Op=dlsym, got %T %v", err, err)
+	if !errors.As(err, &dlerr) || dlerr.Op != OpDLSym {
+		t.Errorf("want *DLError Op=%q, got %T %v", OpDLSym, err, err)
 	}
 }
 

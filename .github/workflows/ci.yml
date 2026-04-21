@@ -44,20 +44,8 @@ jobs:
       - name: Show Go version
         run: go version
 
-      - name: go vet
-        run: go vet ./...
+      - name: Lint (vet + gofmt check)
+        run: make lint
 
-      - name: gofmt check
-        run: |
-          unformatted="$(gofmt -l .)"
-          if [ -n "$unformatted" ]; then
-            echo "gofmt needed on:"
-            echo "$unformatted"
-            exit 1
-          fi
-
-      - name: go test -race
-        run: go test -race ./...
-
-      - name: Coverage gate (internal/lokc ≥ 90%)
+      - name: Coverage gate (runs tests with -race)
         run: make cover-gate
