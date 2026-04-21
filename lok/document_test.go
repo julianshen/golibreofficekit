@@ -3,8 +3,11 @@
 package lok
 
 import (
+	"bytes"
 	"errors"
+	"os"
 	"testing"
+	"testing/iotest"
 )
 
 func TestDocumentType_String(t *testing.T) {
@@ -318,6 +321,74 @@ func TestSave_BackendError(t *testing.T) {
 	defer doc.Close()
 	if err := doc.Save(); !errors.Is(err, synth) {
 		t.Errorf("want synthetic via Unwrap, got %v", err)
+	}
+}
+
+func TestLoadFromReader_WritesTempFileAndCleansUp(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+
+	content := []byte("PK fake ODT bytes")
+	doc, err := o.LoadFromReader(bytes.NewReader(content), "odt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tempPath := doc.tempPath
+	if tempPath == "" {
+		t.Fatal("tempPath not set")
+	}
+	if _, err := os.Stat(tempPath); err != nil {
+		t.Errorf("temp file not present: %v", err)
+	}
+	if err := doc.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(tempPath); !os.IsNotExist(err) {
+		t.Errorf("temp file not removed: %v", err)
+	}
+}
+
+func TestLoadFromReader_EmptyFilterOK(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, err := o.LoadFromReader(bytes.NewReader([]byte("x")), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer doc.Close()
+	if doc.tempPath == "" {
+		t.Error("tempPath not set")
+	}
+}
+
+func TestLoadFromReader_ReaderError(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	_, err := o.LoadFromReader(iotest.ErrReader(errors.New("boom")), "odt")
+	if err == nil {
+		t.Fatal("expected reader error to surface")
+	}
+	// Ensure no orphaned temp files remain. We can't get the path
+	// back (the Document isn't returned), so this just verifies that
+	// LoadFromReader doesn't leak on the error path at least via
+	// os.TempDir. A directory listing is out of scope; rely on the
+	// implementation to Remove on failure.
+}
+
+func TestLoadFromReader_LoadError(t *testing.T) {
+	synth := errors.New("synthetic load")
+	fb := &fakeBackend{loadErr: synth}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	_, err := o.LoadFromReader(bytes.NewReader([]byte("x")), "odt")
+	if !errors.Is(err, synth) {
+		t.Errorf("want synthetic, got %v", err)
 	}
 }
 

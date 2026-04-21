@@ -4,6 +4,7 @@ package lok
 
 import (
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -276,4 +277,39 @@ func (d *Document) Save() error {
 		return &LOKError{Op: "Save", Detail: err.Error(), err: err}
 	}
 	return nil
+}
+
+// LoadFromReader streams r into a temp file under os.TempDir, then
+// calls Load on that path. filter is used as the temp file's
+// extension when non-empty (so LO auto-detects the format); pass
+// "" to let LO guess from content. The temp file is removed in
+// Document.Close.
+//
+// Accepts the same LoadOption values as Load.
+func (o *Office) LoadFromReader(r io.Reader, filter string, opts ...LoadOption) (*Document, error) {
+	suffix := ""
+	if filter != "" {
+		suffix = "." + filter
+	}
+	f, err := os.CreateTemp("", "lokdoc-*"+suffix)
+	if err != nil {
+		return nil, &LOKError{Op: "LoadFromReader", Detail: err.Error(), err: err}
+	}
+	tempPath := f.Name()
+	if _, err := io.Copy(f, r); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tempPath)
+		return nil, &LOKError{Op: "LoadFromReader", Detail: err.Error(), err: err}
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tempPath)
+		return nil, &LOKError{Op: "LoadFromReader", Detail: err.Error(), err: err}
+	}
+	doc, err := o.Load(tempPath, opts...)
+	if err != nil {
+		_ = os.Remove(tempPath)
+		return nil, err
+	}
+	doc.tempPath = tempPath
+	return doc, nil
 }
