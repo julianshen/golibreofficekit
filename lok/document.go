@@ -235,3 +235,45 @@ func (d *Document) Type() DocumentType {
 	}
 	return DocumentType(d.office.be.DocumentGetType(d.h))
 }
+
+// SaveAs writes the document to path in the given LO format (e.g.
+// "odt", "pdf", "docx", "png"). filterOpts passes extra
+// filter-specific tokens verbatim (e.g. "SkipImages=1"). An empty
+// path returns ErrPathRequired; calls on a closed document return
+// ErrClosed.
+func (d *Document) SaveAs(path, format, filterOpts string) error {
+	if path == "" {
+		return ErrPathRequired
+	}
+	d.office.mu.Lock()
+	defer d.office.mu.Unlock()
+	if d.closed {
+		return ErrClosed
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return &LOKError{Op: "SaveAs", Detail: err.Error(), err: err}
+	}
+	fileURL := (&url.URL{Scheme: "file", Path: abs}).String()
+	if err := d.office.be.DocumentSaveAs(d.h, fileURL, format, filterOpts); err != nil {
+		return &LOKError{Op: "SaveAs", Detail: err.Error(), err: err}
+	}
+	return nil
+}
+
+// Save re-saves the document to its original URL. LOK has no
+// dedicated save() vtable entry, so Save is implemented as saveAs
+// to origURL with no format/filter changes. Single critical section
+// — sync.Mutex is non-reentrant, so the implementation must not
+// call d.SaveAs from inside this method.
+func (d *Document) Save() error {
+	d.office.mu.Lock()
+	defer d.office.mu.Unlock()
+	if d.closed {
+		return ErrClosed
+	}
+	if err := d.office.be.DocumentSaveAs(d.h, d.origURL, "", ""); err != nil {
+		return &LOKError{Op: "Save", Detail: err.Error(), err: err}
+	}
+	return nil
+}
