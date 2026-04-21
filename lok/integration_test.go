@@ -18,7 +18,11 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	if path == "" {
 		t.Skip("LOK_PATH not set")
 	}
-	o, err := New(path)
+	// Give LO its own scratch profile so parallel test binaries (this
+	// package + internal/lokc running concurrently under go test ./...)
+	// don't fight over ~/.config/libreoffice lock files.
+	profile := "file://" + t.TempDir()
+	o, err := New(path, WithUserProfile(profile))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
