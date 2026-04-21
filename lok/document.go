@@ -151,13 +151,16 @@ func (o *Office) Load(path string, opts ...LoadOption) (*Document, error) {
 	fileURL := (&url.URL{Scheme: "file", Path: abs}).String()
 
 	lo := buildLoadOptions(opts)
-	if lo.password != "" {
-		o.be.OfficeSetDocumentPassword(o.h, fileURL, lo.password)
-	}
 
+	// Validate options BEFORE registering the password. An invalid
+	// option must not leave a password callback armed for a URL that
+	// this call will never actually load.
 	optsStr, err := composeLoadOptions(lo)
 	if err != nil {
 		return nil, err
+	}
+	if lo.password != "" {
+		o.be.OfficeSetDocumentPassword(o.h, fileURL, lo.password)
 	}
 
 	var h documentHandle

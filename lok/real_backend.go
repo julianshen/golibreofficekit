@@ -82,7 +82,9 @@ func (realDocumentHandle) documentBrand() {}
 func (realBackend) DocumentLoad(h officeHandle, url string) (documentHandle, error) {
 	doc := lokc.DocumentLoad(must(h).h, url)
 	if !doc.IsValid() {
-		return nil, &LOKError{Op: "Load", Detail: "documentLoad returned NULL"}
+		// Wrap lokc.ErrNilDocument so callers can errors.Is against
+		// it through the public *LOKError.Unwrap() chain.
+		return nil, &LOKError{Op: "Load", Detail: "documentLoad returned NULL", err: lokc.ErrNilDocument}
 	}
 	return realDocumentHandle{d: doc}, nil
 }
@@ -90,7 +92,7 @@ func (realBackend) DocumentLoad(h officeHandle, url string) (documentHandle, err
 func (realBackend) DocumentLoadWithOptions(h officeHandle, url, options string) (documentHandle, error) {
 	doc := lokc.DocumentLoadWithOptions(must(h).h, url, options)
 	if !doc.IsValid() {
-		return nil, &LOKError{Op: "Load", Detail: "documentLoadWithOptions returned NULL"}
+		return nil, &LOKError{Op: "Load", Detail: "documentLoadWithOptions returned NULL", err: lokc.ErrNilDocument}
 	}
 	return realDocumentHandle{d: doc}, nil
 }
