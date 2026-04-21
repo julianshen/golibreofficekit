@@ -21,6 +21,16 @@ type fakeBackend struct {
 	dumpStateOut    string
 	lastPwdURL      string
 	lastPwdPassword string
+
+	loadErr      error
+	saveErr      error
+	lastLoadURL  string
+	lastLoadOpts string
+	lastSaveURL  string
+	lastSaveFmt  string
+	lastSaveOpts string
+	docDestroys  int
+	docType      int // returned by DocumentGetType
 }
 
 type fakeLib struct{}
@@ -60,6 +70,49 @@ func (f *fakeBackend) OfficeDestroy(officeHandle) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.destroys++
+}
+
+type fakeDoc struct {
+	be  *fakeBackend
+	url string
+}
+
+func (*fakeDoc) documentBrand() {}
+
+func (f *fakeBackend) DocumentLoad(_ officeHandle, url string) (documentHandle, error) {
+	if f.loadErr != nil {
+		return nil, f.loadErr
+	}
+	f.lastLoadURL = url
+	return &fakeDoc{be: f, url: url}, nil
+}
+
+func (f *fakeBackend) DocumentLoadWithOptions(_ officeHandle, url, opts string) (documentHandle, error) {
+	if f.loadErr != nil {
+		return nil, f.loadErr
+	}
+	f.lastLoadURL = url
+	f.lastLoadOpts = opts
+	return &fakeDoc{be: f, url: url}, nil
+}
+
+func (f *fakeBackend) DocumentGetType(documentHandle) int { return f.docType }
+
+func (f *fakeBackend) DocumentSaveAs(d documentHandle, url, format, opts string) error {
+	if f.saveErr != nil {
+		return f.saveErr
+	}
+	f.lastSaveURL = url
+	f.lastSaveFmt = format
+	f.lastSaveOpts = opts
+	return nil
+}
+
+func (f *fakeBackend) DocumentDestroy(documentHandle) {
+	// Not mutex-guarded: withFakeBackend forbids t.Parallel() so
+	// concurrent access is a programmer bug, consistent with the
+	// other capture fields added in Phase 2.
+	f.docDestroys++
 }
 
 // withFakeBackend swaps the package-level backend + singleton. It

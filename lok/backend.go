@@ -15,8 +15,15 @@ type backend interface {
 	OfficeDumpState(h officeHandle) string
 	OfficeTrimMemory(h officeHandle, target int)
 	OfficeDestroy(h officeHandle)
+
+	DocumentLoad(h officeHandle, url string) (documentHandle, error)
+	DocumentLoadWithOptions(h officeHandle, url, options string) (documentHandle, error)
+	DocumentGetType(d documentHandle) int
+	DocumentSaveAs(d documentHandle, url, format, filterOptions string) error
+	DocumentDestroy(d documentHandle)
 }
 
 // libraryHandle and officeHandle are opaque across the boundary.
 type libraryHandle interface{ libraryBrand() }
 type officeHandle interface{ officeBrand() }
+type documentHandle interface{ documentBrand() }

@@ -75,6 +75,46 @@ func must(h officeHandle) realOfficeHandle {
 	return rh
 }
 
+type realDocumentHandle struct{ d lokc.DocumentHandle }
+
+func (realDocumentHandle) documentBrand() {}
+
+func (realBackend) DocumentLoad(h officeHandle, url string) (documentHandle, error) {
+	doc := lokc.DocumentLoad(must(h).h, url)
+	if !doc.IsValid() {
+		return nil, &LOKError{Op: "Load", Detail: "documentLoad returned NULL"}
+	}
+	return realDocumentHandle{d: doc}, nil
+}
+
+func (realBackend) DocumentLoadWithOptions(h officeHandle, url, options string) (documentHandle, error) {
+	doc := lokc.DocumentLoadWithOptions(must(h).h, url, options)
+	if !doc.IsValid() {
+		return nil, &LOKError{Op: "Load", Detail: "documentLoadWithOptions returned NULL"}
+	}
+	return realDocumentHandle{d: doc}, nil
+}
+
+func (realBackend) DocumentGetType(d documentHandle) int {
+	return lokc.DocumentGetType(mustDoc(d).d)
+}
+
+func (realBackend) DocumentSaveAs(d documentHandle, url, format, filterOptions string) error {
+	return lokc.DocumentSaveAs(mustDoc(d).d, url, format, filterOptions)
+}
+
+func (realBackend) DocumentDestroy(d documentHandle) {
+	lokc.DocumentDestroy(mustDoc(d).d)
+}
+
+func mustDoc(d documentHandle) realDocumentHandle {
+	rd, ok := d.(realDocumentHandle)
+	if !ok {
+		panic("lok: document handle does not match real backend")
+	}
+	return rd
+}
+
 func init() {
 	setBackend(realBackend{})
 }

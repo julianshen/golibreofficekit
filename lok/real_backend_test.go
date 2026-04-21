@@ -96,6 +96,76 @@ func TestLOKError_Error(t *testing.T) {
 	}
 }
 
+func TestRealBackend_DocumentForwarding(t *testing.T) {
+	rb := realBackend{}
+
+	// Fake DocumentHandle from lokc directly.
+	fakeDocHandle := lokc.NewFakeDocumentHandle()
+	defer lokc.FreeFakeDocumentHandle(fakeDocHandle)
+	rdoc := realDocumentHandle{d: fakeDocHandle}
+
+	if got := rb.DocumentGetType(rdoc); got != -1 {
+		t.Errorf("DocumentGetType on fake pClass=NULL: got %d, want -1", got)
+	}
+	if err := rb.DocumentSaveAs(rdoc, "file:///tmp/x.odt", "odt", ""); err == nil {
+		t.Error("DocumentSaveAs on fake with NULL vtable must error")
+	}
+	rb.DocumentDestroy(rdoc) // must not panic
+}
+
+func TestRealBackend_DocumentLoadForwarding(t *testing.T) {
+	rb := realBackend{}
+
+	// Build a fake office handle via NewFakeLibrary (pClass is NULL
+	// so documentLoad returns NULL — exercises the error path in
+	// realBackend.DocumentLoad and calls into lokc.DocumentLoad).
+	fakeLib := realLibraryHandle{lib: lokc.NewFakeLibrary(2)}
+	h, err := rb.InvokeHook(fakeLib, "file:///tmp/profile")
+	if err != nil {
+		t.Fatalf("InvokeHook: %v", err)
+	}
+	defer func() {
+		rh := h.(realOfficeHandle)
+		lokc.FreeFakeOfficeHandle(rh.h)
+	}()
+
+	// DocumentLoad: pClass.documentLoad is NULL → returns invalid handle → error.
+	doc, err := rb.DocumentLoad(h, "file:///tmp/test.odt")
+	if err == nil {
+		t.Error("DocumentLoad with NULL vtable must error")
+	}
+	if doc != nil {
+		t.Error("DocumentLoad must return nil on error")
+	}
+
+	// DocumentLoadWithOptions: same expectation.
+	doc2, err := rb.DocumentLoadWithOptions(h, "file:///tmp/test.odt", "Hidden=1")
+	if err == nil {
+		t.Error("DocumentLoadWithOptions with NULL vtable must error")
+	}
+	if doc2 != nil {
+		t.Error("DocumentLoadWithOptions must return nil on error")
+	}
+
+	// OfficeDestroy: also covered here to avoid a separate fake setup.
+	rb.OfficeDestroy(h)
+	// FreeFakeOfficeHandle deferred above must not double-free — it's safe
+	// to call on a destroyed handle (lokc guards are NULL-checked).
+}
+
+func TestRealBackend_DocumentHandleMismatchPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic on mismatched document handle")
+		}
+	}()
+	realBackend{}.DocumentGetType(&fakeDoc{})
+}
+
+func TestRealBackend_DocumentBrand(t *testing.T) {
+	realDocumentHandle{}.documentBrand()
+}
+
 // TestWithUserProfile_SetsField covers the WithUserProfile option.
 func TestWithUserProfile_SetsField(t *testing.T) {
 	opts := buildOptions([]Option{WithUserProfile("file:///home/x/.libreoffice")})
