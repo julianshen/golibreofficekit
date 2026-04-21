@@ -13,6 +13,14 @@ type fakeBackend struct {
 	hookErr  error
 	version  string
 	destroys int
+
+	// Capture fields for Task 7 methods. Not mutex-guarded because
+	// withFakeBackend forbids t.Parallel().
+	lastAuthor      string
+	lastTrimTarget  int
+	dumpStateOut    string
+	lastPwdURL      string
+	lastPwdPassword string
 }
 
 type fakeLib struct{}
@@ -41,10 +49,13 @@ func (f *fakeBackend) InvokeHook(lib libraryHandle, _ string) (officeHandle, err
 func (f *fakeBackend) OfficeGetError(officeHandle) string                     { return "" }
 func (f *fakeBackend) OfficeGetVersionInfo(officeHandle) string               { return f.version }
 func (f *fakeBackend) OfficeSetOptionalFeatures(officeHandle, uint64)         {}
-func (f *fakeBackend) OfficeSetDocumentPassword(officeHandle, string, string) {}
-func (f *fakeBackend) OfficeSetAuthor(officeHandle, string)                   {}
-func (f *fakeBackend) OfficeDumpState(officeHandle) string                    { return "state" }
-func (f *fakeBackend) OfficeTrimMemory(officeHandle, int)                     {}
+func (f *fakeBackend) OfficeSetAuthor(_ officeHandle, s string)    { f.lastAuthor = s }
+func (f *fakeBackend) OfficeTrimMemory(_ officeHandle, n int)      { f.lastTrimTarget = n }
+func (f *fakeBackend) OfficeDumpState(_ officeHandle) string       { return f.dumpStateOut }
+func (f *fakeBackend) OfficeSetDocumentPassword(_ officeHandle, url, pwd string) {
+	f.lastPwdURL = url
+	f.lastPwdPassword = pwd
+}
 func (f *fakeBackend) OfficeDestroy(officeHandle) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -133,5 +144,109 @@ func TestClose_Idempotent(t *testing.T) {
 	}
 	if fb.destroys != 1 {
 		t.Errorf("destroys: want 1, got %d", fb.destroys)
+	}
+}
+
+func TestSetAuthor_Records(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, err := New("/install")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer o.Close()
+	if err := o.SetAuthor("Jane Doe"); err != nil {
+		t.Fatalf("SetAuthor: %v", err)
+	}
+	if fb.lastAuthor != "Jane Doe" {
+		t.Errorf("recorded %q, want Jane Doe", fb.lastAuthor)
+	}
+}
+
+func TestTrimMemory_PassesTarget(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, err := New("/install")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer o.Close()
+	if err := o.TrimMemory(42); err != nil {
+		t.Fatalf("TrimMemory: %v", err)
+	}
+	if fb.lastTrimTarget != 42 {
+		t.Errorf("recorded %d, want 42", fb.lastTrimTarget)
+	}
+}
+
+func TestDumpState_ReturnsBackendString(t *testing.T) {
+	fb := &fakeBackend{dumpStateOut: "snapshot-xyz"}
+	withFakeBackend(t, fb)
+	o, err := New("/install")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer o.Close()
+	got, err := o.DumpState()
+	if err != nil {
+		t.Fatalf("DumpState: %v", err)
+	}
+	if got != "snapshot-xyz" {
+		t.Errorf("DumpState=%q, want snapshot-xyz", got)
+	}
+}
+
+func TestSetDocumentPassword_PassesCredentials(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, err := New("/install")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer o.Close()
+	if err := o.SetDocumentPassword("file:///tmp/x.odt", "hunter2"); err != nil {
+		t.Fatalf("SetDocumentPassword: %v", err)
+	}
+	if fb.lastPwdURL != "file:///tmp/x.odt" || fb.lastPwdPassword != "hunter2" {
+		t.Errorf("recorded (url=%q pwd=%q)", fb.lastPwdURL, fb.lastPwdPassword)
+	}
+}
+
+func TestSetDocumentPassword_EmptyURLErrors(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, err := New("/install")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer o.Close()
+	err = o.SetDocumentPassword("", "x")
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) || lokErr.Op != "SetDocumentPassword" {
+		t.Errorf("want *LOKError Op=SetDocumentPassword, got %T %v", err, err)
+	}
+}
+
+func TestRemainingMethods_AfterCloseErrors(t *testing.T) {
+	cases := []struct {
+		name string
+		call func(*Office) error
+	}{
+		{"SetAuthor", func(o *Office) error { return o.SetAuthor("x") }},
+		{"TrimMemory", func(o *Office) error { return o.TrimMemory(0) }},
+		{"DumpState", func(o *Office) error { _, err := o.DumpState(); return err }},
+		{"SetDocumentPassword", func(o *Office) error { return o.SetDocumentPassword("file:///x", "p") }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			withFakeBackend(t, &fakeBackend{})
+			o, err := New("/install")
+			if err != nil {
+				t.Fatal(err)
+			}
+			o.Close()
+			if err := tc.call(o); !errors.Is(err, ErrClosed) {
+				t.Errorf("want ErrClosed, got %v", err)
+			}
+		})
 	}
 }
