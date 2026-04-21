@@ -10,9 +10,14 @@ var (
 )
 
 // LOKError wraps an error string returned by LibreOffice itself.
+// When an internal error (e.g. from internal/lokc) is wrapped at the
+// public-API boundary, err preserves the original so errors.Is against
+// unexported sentinels and errors.As against the original concrete
+// type continue to work.
 type LOKError struct {
 	Op     string // "VersionInfo", "Save", ...
 	Detail string // LOK-returned error text
+	err    error  // wrapped internal error, may be nil
 }
 
 func (e *LOKError) Error() string {
@@ -21,3 +26,7 @@ func (e *LOKError) Error() string {
 	}
 	return "lok: " + e.Op + ": " + e.Detail
 }
+
+// Unwrap returns the wrapped internal error so errors.Is / errors.As
+// can traverse the chain.
+func (e *LOKError) Unwrap() error { return e.err }

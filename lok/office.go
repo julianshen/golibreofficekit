@@ -1,3 +1,5 @@
+//go:build linux || darwin
+
 package lok
 
 import (
@@ -71,11 +73,11 @@ func New(installPath string, opts ...Option) (*Office, error) {
 
 	lib, err := be.OpenLibrary(installPath)
 	if err != nil {
-		return nil, err
+		return nil, &LOKError{Op: "OpenLibrary", Detail: err.Error(), err: err}
 	}
 	h, err := be.InvokeHook(lib, options.userProfileURL)
 	if err != nil {
-		return nil, err
+		return nil, &LOKError{Op: "InvokeHook", Detail: err.Error(), err: err}
 	}
 
 	o := &Office{be: be, h: h}
