@@ -108,4 +108,71 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	if got := doc2.Type(); got != TypeText {
 		t.Errorf("reader-loaded Type()=%v, want Text", got)
 	}
+
+	// View round-trip on doc.
+
+	initialView, err := doc.View()
+	if err != nil {
+		t.Fatalf("View (initial): %v", err)
+	}
+	initialViews, err := doc.Views()
+	if err != nil {
+		t.Fatalf("Views (initial): %v", err)
+	}
+	if len(initialViews) == 0 {
+		t.Logf("initial Views() empty; LO may have set this up lazily")
+	}
+
+	newView, err := doc.CreateView()
+	if err != nil {
+		t.Fatalf("CreateView: %v", err)
+	}
+	if newView == initialView {
+		t.Errorf("CreateView returned same ID as initial view")
+	}
+
+	views, err := doc.Views()
+	if err != nil {
+		t.Fatalf("Views: %v", err)
+	}
+	var found bool
+	for _, v := range views {
+		if v == newView {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("new view %d not in Views() list %v", newView, views)
+	}
+
+	if err := doc.SetView(newView); err != nil {
+		t.Errorf("SetView: %v", err)
+	}
+	if got, _ := doc.View(); got != newView {
+		t.Errorf("View()=%d after SetView(%d)", got, newView)
+	}
+
+	if err := doc.SetViewReadOnly(newView, true); err != nil {
+		t.Errorf("SetViewReadOnly: %v", err)
+	}
+	if err := doc.SetViewLanguage(newView, "en-US"); err != nil {
+		t.Errorf("SetViewLanguage: %v", err)
+	}
+	if err := doc.SetAccessibilityState(newView, false); err != nil {
+		t.Errorf("SetAccessibilityState: %v", err)
+	}
+	if err := doc.SetViewTimezone(newView, "UTC"); err != nil {
+		t.Errorf("SetViewTimezone: %v", err)
+	}
+
+	if err := doc.DestroyView(newView); err != nil {
+		t.Errorf("DestroyView: %v", err)
+	}
+
+	// Restore the initial view as active so any subsequent subtest
+	// starts from a deterministic state rather than whatever
+	// fallback LO picked after DestroyView.
+	if err := doc.SetView(initialView); err != nil {
+		t.Errorf("SetView restore: %v", err)
+	}
 }
