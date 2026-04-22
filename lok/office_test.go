@@ -2,6 +2,7 @@ package lok
 
 import (
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 )
@@ -39,6 +40,7 @@ type fakeBackend struct {
 	viewsLive        []int
 	viewActive       int
 	viewCreateErr    bool // if true, CreateView returns -1
+	lastViewOptions  string
 	lastViewLang     string
 	lastViewLangID   int
 	lastViewReadOnly bool
@@ -140,7 +142,8 @@ func (f *fakeBackend) DocumentCreateView(documentHandle) int {
 	return id
 }
 
-func (f *fakeBackend) DocumentCreateViewWithOptions(d documentHandle, _ string) int {
+func (f *fakeBackend) DocumentCreateViewWithOptions(d documentHandle, opts string) int {
+	f.lastViewOptions = opts
 	return f.DocumentCreateView(d)
 }
 
@@ -163,11 +166,26 @@ func (f *fakeBackend) DocumentDestroyView(_ documentHandle, id int) {
 	}
 }
 
+// DocumentSetView silently ignores an unknown ID — matching real LOK
+// which returns void and gives no failure signal, but constraining
+// the fake to live IDs catches "destroyed-view regressions" in
+// tests before the ID escapes into getView().
 func (f *fakeBackend) DocumentSetView(_ documentHandle, id int) {
-	f.viewActive = id
+	if slices.Contains(f.viewsLive, id) {
+		f.viewActive = id
+	}
 }
 
-func (f *fakeBackend) DocumentGetView(documentHandle) int       { return f.viewActive }
+// DocumentGetView returns -1 when no views are live rather than the
+// zero value of viewActive, matching the "no active view" signal
+// lok.View() checks for.
+func (f *fakeBackend) DocumentGetView(documentHandle) int {
+	if len(f.viewsLive) == 0 {
+		return -1
+	}
+	return f.viewActive
+}
+
 func (f *fakeBackend) DocumentGetViewsCount(documentHandle) int { return len(f.viewsLive) }
 
 func (f *fakeBackend) DocumentGetViewIds(documentHandle) ([]int, bool) {

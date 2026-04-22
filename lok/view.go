@@ -6,12 +6,18 @@ package lok
 // ViewID exists for self-documenting call sites.
 type ViewID int
 
-// guard locks the Office mutex and verifies the document is still
-// open. Callers defer the returned unlock func. Factors the
-// Lock/defer-Unlock/closed-check pattern used by every view method.
+// guard locks the Office mutex and verifies both the document and
+// its parent Office are still open. Callers defer the returned
+// unlock func. Factors the Lock/defer-Unlock/closed-check pattern
+// used by every view method.
+//
+// Checking office.closed too matters: Office.Close destroys the LOK
+// backend state; view methods invoked on a still-alive Document
+// after the Office went away would crash or read garbage. ErrClosed
+// is the right response either way.
 func (d *Document) guard() (unlock func(), err error) {
 	d.office.mu.Lock()
-	if d.closed {
+	if d.closed || d.office.closed {
 		d.office.mu.Unlock()
 		return func() {}, ErrClosed
 	}
@@ -73,14 +79,21 @@ func (d *Document) SetView(id ViewID) error {
 	return nil
 }
 
-// View returns the currently-active view ID.
+// View returns the currently-active view ID. A -1 return from the
+// backend (no active view, missing vtable entry, or vtable failure)
+// surfaces as *LOKError so callers don't get a silent zero/-1
+// leaking through.
 func (d *Document) View() (ViewID, error) {
 	unlock, err := d.guard()
 	if err != nil {
 		return 0, err
 	}
 	defer unlock()
-	return ViewID(d.office.be.DocumentGetView(d.h)), nil
+	id := d.office.be.DocumentGetView(d.h)
+	if id < 0 {
+		return 0, &LOKError{Op: "View", Detail: "LOK returned -1"}
+	}
+	return ViewID(id), nil
 }
 
 // Views returns the IDs of all live views in document order.

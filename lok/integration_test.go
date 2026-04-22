@@ -148,7 +148,9 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	if err := doc.SetView(newView); err != nil {
 		t.Errorf("SetView: %v", err)
 	}
-	if got, _ := doc.View(); got != newView {
+	if got, err := doc.View(); err != nil {
+		t.Errorf("View after SetView: %v", err)
+	} else if got != newView {
 		t.Errorf("View()=%d after SetView(%d)", got, newView)
 	}
 
