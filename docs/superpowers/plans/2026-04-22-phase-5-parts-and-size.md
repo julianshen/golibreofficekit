@@ -296,7 +296,10 @@ Unchanged at 90% across `./internal/lokc/...` + `./lok/...`.
   }
 
   // DocumentGetDocumentSize returns (width, height) in twips. Both
-  // zero if unavailable.
+  // zero if unavailable. Assumes LP64 (Linux amd64, macOS arm64,
+  // macOS amd64) — `long` is 64-bit on all supported platforms, so
+  // int64(C.long) is lossless. 32-bit platforms are unsupported
+  // per the spec.
   func DocumentGetDocumentSize(d DocumentHandle) (int64, int64) {
   	if !d.IsValid() {
   		return 0, 0
@@ -376,6 +379,9 @@ One-liner forwarders for each, using `mustDoc(d).d`.
 New fields (under the existing "View state" comment block or a new
 block):
 ```go
+	// partsCount convention: -1 = simulate LOK backend failure
+	// (matches internal/lokc's return-on-NULL-pClass); 0+ = real
+	// part count. Fresh `&fakeBackend{}` is a 0-part document.
 	partsCount      int
 	partActive      int
 	partNames       map[int]string
@@ -649,12 +655,15 @@ func TestPartInfo_UnwrapsJSON(t *testing.T) {
 	}
 }
 
-func TestPartInfo_EmptyIsError(t *testing.T) {
+func TestPartInfo_EmptyIsNil(t *testing.T) {
+	// Writer/Calc docs legitimately return empty — not an error.
 	_, doc := loadFakeDoc(t, &fakeBackend{})
-	_, err := doc.PartInfo(0)
-	var lokErr *LOKError
-	if !errors.As(err, &lokErr) {
-		t.Errorf("want *LOKError, got %T %v", err, err)
+	raw, err := doc.PartInfo(0)
+	if err != nil {
+		t.Fatalf("empty PartInfo: err=%v, want nil", err)
+	}
+	if raw != nil {
+		t.Errorf("empty PartInfo: raw=%q, want nil", string(raw))
 	}
 }
 
@@ -723,10 +732,12 @@ func TestParsePartPageRectangles_Direct(t *testing.T) {
 	}{
 		{"", nil, false},
 		{"0, 0, 100, 200", []TwipRect{{0, 0, 100, 200}}, false},
-		{"0,0,100,200", []TwipRect{{0, 0, 100, 200}}, false}, // no spaces
-		{"0, 0, 100, 200; 100, 0, 50, 200", []TwipRect{{0, 0, 100, 200}, {100, 0, 50, 200}}, false},
-		{"garbage", nil, true},
-		{"1, 2, 3", nil, true}, // three fields
+		{"0,0,100,200", []TwipRect{{0, 0, 100, 200}}, false},                                            // no spaces
+		{"0, 0, 100, 200; 100, 0, 50, 200", []TwipRect{{0, 0, 100, 200}, {100, 0, 50, 200}}, false},     // multi
+		{"0, 0, 100, 200;", []TwipRect{{0, 0, 100, 200}}, false},                                        // trailing ';' (LO sometimes emits this)
+		{"-10, -20, 100, 200", []TwipRect{{-10, -20, 100, 200}}, false},                                 // negative origin is legal
+		{"garbage", nil, true},                                                                          // unparseable
+		{"1, 2, 3", nil, true},                                                                          // too few fields
 	}
 	for _, tc := range cases {
 		got, err := parsePartPageRectangles(tc.in)
@@ -756,9 +767,12 @@ type TwipRect struct {
 	X, Y, W, H int64
 }
 
-// PartInfo returns the part's LOK JSON metadata as json.RawMessage.
-// Schema varies by document type; decode to a typed struct on the
-// caller's side. An empty response from LOK is wrapped as *LOKError.
+// PartInfo returns the part's LOK JSON metadata as json.RawMessage,
+// or (nil, nil) when LOK returns an empty string. Writer and Calc
+// documents legitimately return empty — only Impress populates
+// per-part info in LOK 24.8. Callers that require populated info
+// should check `raw == nil` and act accordingly; this is not an
+// error condition at the binding level.
 func (d *Document) PartInfo(n int) (json.RawMessage, error) {
 	unlock, err := d.guard()
 	if err != nil {
@@ -767,7 +781,7 @@ func (d *Document) PartInfo(n int) (json.RawMessage, error) {
 	defer unlock()
 	raw := d.office.be.DocumentGetPartInfo(d.h, n)
 	if raw == "" {
-		return nil, &LOKError{Op: "PartInfo", Detail: "empty response"}
+		return nil, nil
 	}
 	return json.RawMessage(raw), nil
 }
