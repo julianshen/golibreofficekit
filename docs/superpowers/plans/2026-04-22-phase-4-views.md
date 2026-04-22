@@ -128,8 +128,8 @@ applied to `Views() ([]ViewID, error)`. Flag in the PR body.
   	if got := DocumentGetViewsCount(d); got != 0 {
   		t.Errorf("GetViewsCount on nil: got %d, want 0", got)
   	}
-  	if ids := DocumentGetViewIds(d); ids != nil {
-  		t.Errorf("GetViewIds on nil: got %v, want nil", ids)
+  	if ids, ok := DocumentGetViewIds(d); ids != nil || ok {
+  		t.Errorf("GetViewIds on nil: got (%v, %v), want (nil, false)", ids, ok)
   	}
   	// Void wrappers must not panic.
   	DocumentDestroyView(d, 0)
@@ -284,28 +284,36 @@ applied to `Views() ([]ViewID, error)`. Flag in the PR body.
   	return int(C.go_doc_get_views_count(d.p))
   }
 
-  // DocumentGetViewIds returns the IDs of live views in document
-  // order. Returns nil if the handle is invalid, the vtable is
-  // missing, LOK reports failure, or no views are live. A negative
-  // count from LOK (shouldn't happen but the API returns int not
-  // size_t) is treated as "no data" and yields nil.
-  func DocumentGetViewIds(d DocumentHandle) []int {
+  // DocumentGetViewIds returns (ids, true) on success, (nil, true)
+  // when there are legitimately zero live views, and (nil, false)
+  // when the backend call itself failed (invalid handle, missing
+  // vtable entry, or getViewIds returned false).
+  //
+  // NOT thread-safe: it performs two sequential cgo calls
+  // (getViewsCount then getViewIds). Callers must serialise
+  // externally; the public lok.Views() wrapper holds the Office
+  // mutex across both to prevent a racing CreateView/DestroyView
+  // from resizing LOK's internal view list mid-call.
+  func DocumentGetViewIds(d DocumentHandle) ([]int, bool) {
   	if !d.IsValid() {
-  		return nil
+  		return nil, false
   	}
   	n := int(C.go_doc_get_views_count(d.p))
-  	if n <= 0 {
-  		return nil
+  	if n < 0 {
+  		return nil, false
+  	}
+  	if n == 0 {
+  		return nil, true
   	}
   	buf := make([]C.int, n)
   	if !bool(C.go_doc_get_view_ids(d.p, (*C.int)(unsafe.Pointer(&buf[0])), C.size_t(n))) {
-  		return nil
+  		return nil, false
   	}
   	out := make([]int, n)
   	for i, v := range buf {
   		out[i] = int(v)
   	}
-  	return out
+  	return out, true
   }
 
   // DocumentSetViewLanguage / ReadOnly / AccessibilityState / Timezone
@@ -388,7 +396,7 @@ Append to the `backend` interface:
 	DocumentSetView(d documentHandle, id int)
 	DocumentGetView(d documentHandle) int
 	DocumentGetViewsCount(d documentHandle) int
-	DocumentGetViewIds(d documentHandle) []int
+	DocumentGetViewIds(d documentHandle) (ids []int, ok bool)
 	DocumentSetViewLanguage(d documentHandle, id int, lang string)
 	DocumentSetViewReadOnly(d documentHandle, id int, readOnly bool)
 	DocumentSetAccessibilityState(d documentHandle, id int, enabled bool)
@@ -402,7 +410,11 @@ For each, pattern:
 func (realBackend) DocumentCreateView(d documentHandle) int {
 	return lokc.DocumentCreateView(mustDoc(d).d)
 }
-// ... etc for every method
+// ... etc for every method. DocumentGetViewIds propagates both
+// return values:
+func (realBackend) DocumentGetViewIds(d documentHandle) ([]int, bool) {
+	return lokc.DocumentGetViewIds(mustDoc(d).d)
+}
 ```
 
 ### Step 3: Extend `fakeBackend` in `lok/office_test.go`
@@ -466,13 +478,13 @@ func (f *fakeBackend) DocumentSetView(_ documentHandle, id int) {
 func (f *fakeBackend) DocumentGetView(documentHandle) int       { return f.viewActive }
 func (f *fakeBackend) DocumentGetViewsCount(documentHandle) int { return len(f.viewsLive) }
 
-func (f *fakeBackend) DocumentGetViewIds(documentHandle) []int {
+func (f *fakeBackend) DocumentGetViewIds(documentHandle) ([]int, bool) {
 	if len(f.viewsLive) == 0 {
-		return nil
+		return nil, true
 	}
 	out := make([]int, len(f.viewsLive))
 	copy(out, f.viewsLive)
-	return out
+	return out, true
 }
 
 func (f *fakeBackend) DocumentSetViewLanguage(_ documentHandle, id int, lang string) {
@@ -518,8 +530,8 @@ func TestRealBackend_ViewForwarding(t *testing.T) {
 	if got := rb.DocumentGetViewsCount(rdoc); got != 0 {
 		t.Errorf("GetViewsCount: got %d, want 0", got)
 	}
-	if got := rb.DocumentGetViewIds(rdoc); got != nil {
-		t.Errorf("GetViewIds: got %v, want nil", got)
+	if ids, ok := rb.DocumentGetViewIds(rdoc); ids != nil || ok {
+		t.Errorf("GetViewIds: got (%v, %v), want (nil, false)", ids, ok)
 	}
 	rb.DocumentDestroyView(rdoc, 0)
 	rb.DocumentSetView(rdoc, 0)
@@ -782,14 +794,19 @@ func (d *Document) View() (ViewID, error) {
 }
 
 // Views returns the IDs of all live views in document order.
+// Returns (nil, nil) when zero views are live, (nil, *LOKError)
+// when the backend call itself fails.
 func (d *Document) Views() ([]ViewID, error) {
 	unlock, err := d.guard()
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
-	raw := d.office.be.DocumentGetViewIds(d.h)
-	if raw == nil {
+	raw, ok := d.office.be.DocumentGetViewIds(d.h)
+	if !ok {
+		return nil, &LOKError{Op: "Views", Detail: "LOK getViewIds failed"}
+	}
+	if len(raw) == 0 {
 		return nil, nil
 	}
 	out := make([]ViewID, len(raw))
