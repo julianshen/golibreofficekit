@@ -852,13 +852,14 @@ make all && make cover-gate
 git add lok/part.go lok/part_test.go
 git commit -m "feat(lok): PartInfo + DocumentSize + PartPageRectangles
 
-PartInfo surfaces LOK's per-part JSON as json.RawMessage; empty
-response is *LOKError. DocumentSize returns (widthTwips,
-heightTwips, error) via the two-out-param cgo call. PartPage
-Rectangles parses LOK's \"x, y, w, h; x, y, w, h; …\" string
-format into []TwipRect; a direct unit test of the parser covers
-the whitespace / malformed edge cases without going through the
-fake.
+PartInfo surfaces LOK's per-part JSON as json.RawMessage; an
+empty response is (nil, nil) because Writer and Calc legitimately
+return empty (only Impress populates per-part info in LOK 24.8).
+DocumentSize returns (widthTwips, heightTwips, error) via the
+two-out-param cgo call. PartPageRectangles parses LOK's
+\"x, y, w, h; x, y, w, h; …\" string format into []TwipRect; a
+direct unit test of the parser covers whitespace, trailing ';',
+negative-origin, and malformed edge cases.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -969,9 +970,15 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 		t.Log("PartHash empty; LO may not compute it for Writer docs")
 	}
 
-	if _, err := doc.PartInfo(activePart); err != nil {
-		// PartInfo is only populated for Impress; Writer returns empty.
-		t.Logf("PartInfo(%d): %v (expected for non-Impress docs)", activePart, err)
+	// PartInfo must not error — empty payload is legitimate for
+	// Writer/Calc and surfaces as (nil, nil). If a regression starts
+	// returning errors for normal documents, this fails.
+	info, err := doc.PartInfo(activePart)
+	if err != nil {
+		t.Errorf("PartInfo(%d): %v (want nil err; empty payload is OK)", activePart, err)
+	}
+	if info == nil {
+		t.Logf("PartInfo(%d) empty (expected for non-Impress docs)", activePart)
 	}
 
 	w, h, err := doc.DocumentSize()
@@ -1033,7 +1040,8 @@ Standard sequence: `make clean`, `make all`, `make cover-gate`,
 - [ ] `SetPart`, `SetPartMode`, `SetOutlineState` return `nil` on
       success, `ErrClosed` post-Close.
 - [ ] `PartInfo` returns `json.RawMessage`; empty LOK response is
-      `*LOKError`.
+      `(nil, nil)` (Writer/Calc legitimately return empty; only
+      Impress populates per-part info).
 - [ ] `DocumentSize` returns two twip values plus error.
 - [ ] `PartPageRectangles` returns `[]TwipRect`; malformed LOK
       response surfaces as `*LOKError`.
