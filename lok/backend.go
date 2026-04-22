@@ -21,6 +21,18 @@ type backend interface {
 	DocumentGetType(d documentHandle) int
 	DocumentSaveAs(d documentHandle, url, format, filterOptions string) error
 	DocumentDestroy(d documentHandle)
+
+	DocumentCreateView(d documentHandle) int
+	DocumentCreateViewWithOptions(d documentHandle, options string) int
+	DocumentDestroyView(d documentHandle, id int)
+	DocumentSetView(d documentHandle, id int)
+	DocumentGetView(d documentHandle) int
+	DocumentGetViewsCount(d documentHandle) int
+	DocumentGetViewIds(d documentHandle) (ids []int, ok bool)
+	DocumentSetViewLanguage(d documentHandle, id int, lang string)
+	DocumentSetViewReadOnly(d documentHandle, id int, readOnly bool)
+	DocumentSetAccessibilityState(d documentHandle, id int, enabled bool)
+	DocumentSetViewTimezone(d documentHandle, id int, tz string)
 }
 
 // libraryHandle and officeHandle are opaque across the boundary.

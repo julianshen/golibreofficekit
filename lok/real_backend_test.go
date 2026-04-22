@@ -180,3 +180,35 @@ func TestErrorSentinelsAreDistinct(t *testing.T) {
 		t.Error("ErrClosed should not match ErrAlreadyInitialised")
 	}
 }
+
+// TestRealBackend_ViewForwarding covers every view-method forwarder
+// via a lokc fake DocumentHandle (pClass==NULL). Return values
+// reflect the guarded-NULL path.
+func TestRealBackend_ViewForwarding(t *testing.T) {
+	rb := realBackend{}
+	fakeDocHandle := lokc.NewFakeDocumentHandle()
+	defer lokc.FreeFakeDocumentHandle(fakeDocHandle)
+	rdoc := realDocumentHandle{d: fakeDocHandle}
+
+	if got := rb.DocumentCreateView(rdoc); got != -1 {
+		t.Errorf("CreateView: got %d, want -1", got)
+	}
+	if got := rb.DocumentCreateViewWithOptions(rdoc, "x=1"); got != -1 {
+		t.Errorf("CreateViewWithOptions: got %d, want -1", got)
+	}
+	if got := rb.DocumentGetView(rdoc); got != -1 {
+		t.Errorf("GetView: got %d, want -1", got)
+	}
+	if got := rb.DocumentGetViewsCount(rdoc); got != -1 {
+		t.Errorf("GetViewsCount on fake NULL pClass: got %d, want -1", got)
+	}
+	if ids, ok := rb.DocumentGetViewIds(rdoc); ids != nil || ok {
+		t.Errorf("GetViewIds: got (%v, %v), want (nil, false)", ids, ok)
+	}
+	rb.DocumentDestroyView(rdoc, 0)
+	rb.DocumentSetView(rdoc, 0)
+	rb.DocumentSetViewLanguage(rdoc, 0, "en-US")
+	rb.DocumentSetViewReadOnly(rdoc, 0, true)
+	rb.DocumentSetAccessibilityState(rdoc, 0, true)
+	rb.DocumentSetViewTimezone(rdoc, 0, "UTC")
+}
