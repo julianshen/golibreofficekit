@@ -104,10 +104,13 @@ func DocumentGetView(d DocumentHandle) int {
 	return int(C.go_doc_get_view(d.p))
 }
 
-// DocumentGetViewsCount returns the number of live views, 0 on nil.
+// DocumentGetViewsCount returns the number of live views. A negative
+// value signals unavailable functionality (nil handle, missing
+// vtable). 0 means zero live views, not an error. Use the sign to
+// distinguish.
 func DocumentGetViewsCount(d DocumentHandle) int {
 	if !d.IsValid() {
-		return 0
+		return -1
 	}
 	return int(C.go_doc_get_views_count(d.p))
 }

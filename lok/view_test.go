@@ -47,13 +47,17 @@ func TestCreateView_BackendFailureErrors(t *testing.T) {
 }
 
 func TestCreateViewWithOptions_PassesThrough(t *testing.T) {
-	_, doc := loadFakeDoc(t, &fakeBackend{})
+	fb := &fakeBackend{}
+	_, doc := loadFakeDoc(t, fb)
 	id, err := doc.CreateViewWithOptions("Language=de-DE")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if id < 0 {
 		t.Errorf("CreateViewWithOptions: got %d", id)
+	}
+	if fb.lastViewOptions != "Language=de-DE" {
+		t.Errorf("CreateViewWithOptions options=%q, want %q", fb.lastViewOptions, "Language=de-DE")
 	}
 }
 

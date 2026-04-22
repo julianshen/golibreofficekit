@@ -15,8 +15,8 @@ func TestDocumentView_NilHandleAreNoOps(t *testing.T) {
 	if got := DocumentGetView(d); got != -1 {
 		t.Errorf("GetView on nil: got %d, want -1", got)
 	}
-	if got := DocumentGetViewsCount(d); got != 0 {
-		t.Errorf("GetViewsCount on nil: got %d, want 0", got)
+	if got := DocumentGetViewsCount(d); got != -1 {
+		t.Errorf("GetViewsCount on nil: got %d, want -1", got)
 	}
 	if ids, ok := DocumentGetViewIds(d); ids != nil || ok {
 		t.Errorf("GetViewIds on nil: got (%v, %v), want (nil, false)", ids, ok)
