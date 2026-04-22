@@ -27,6 +27,11 @@ The spec's §Phase 4 lists all of the above except `SetViewTimezone`;
 the vendored LOK 24.8 header exposes it at the same tier as
 `SetViewLanguage`, so picking it up here avoids a one-off follow-up.
 
+The spec's table shows `View() ViewID` with no error return. The
+plan returns `(ViewID, error)` so a closed-doc call can surface
+`ErrClosed` instead of lying with a zero value. Same reasoning
+applied to `Views() ([]ViewID, error)`. Flag in the PR body.
+
 **Architecture:**
 - `internal/lokc` gains thin 1:1 wrappers: `DocumentCreateView`,
   `DocumentCreateViewWithOptions`, `DocumentDestroyView`,
@@ -227,15 +232,15 @@ the vendored LOK 24.8 header exposes it at the same tier as
   }
 
   // DocumentCreateViewWithOptions forwards the raw options string.
+  // An empty string is passed through as a zero-length C string
+  // (not NULL) because LO's NULL-tolerance is undocumented for this
+  // entry and we prefer the safer convention.
   func DocumentCreateViewWithOptions(d DocumentHandle, options string) int {
   	if !d.IsValid() {
   		return -1
   	}
-  	var copts *C.char
-  	if options != "" {
-  		copts = C.CString(options)
-  		defer C.free(unsafe.Pointer(copts))
-  	}
+  	copts := C.CString(options)
+  	defer C.free(unsafe.Pointer(copts))
   	return int(C.go_doc_create_view_with_options(d.p, copts))
   }
 
@@ -274,7 +279,9 @@ the vendored LOK 24.8 header exposes it at the same tier as
 
   // DocumentGetViewIds returns the IDs of live views in document
   // order. Returns nil if the handle is invalid, the vtable is
-  // missing, or LOK reports failure.
+  // missing, LOK reports failure, or no views are live. A negative
+  // count from LOK (shouldn't happen but the API returns int not
+  // size_t) is treated as "no data" and yields nil.
   func DocumentGetViewIds(d DocumentHandle) []int {
   	if !d.IsValid() {
   		return nil
@@ -395,7 +402,7 @@ func (realBackend) DocumentCreateView(d documentHandle) int {
 
 Add state fields to capture calls:
 ```go
-	viewsNextID      int // monotonic for the fake; starts at 1000
+	viewsNextID      int // monotonic IDs for the fake, starting at 1000 to stay visually distinct from real LO view IDs (which start at 0) in test output
 	viewsLive        []int
 	viewActive       int
 	viewCreateErr    bool // if true, CreateView returns -1 (fake signal)
