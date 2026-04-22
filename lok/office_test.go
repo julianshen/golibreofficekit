@@ -31,7 +31,22 @@ type fakeBackend struct {
 	lastSaveOpts string
 	docDestroys  int
 	docType      int // returned by DocumentGetType
+
+	// View state: monotonic IDs starting at 1000 to stay visually
+	// distinct from real LO view IDs (which start at 0) in test
+	// output.
+	viewsNextID      int
+	viewsLive        []int
+	viewActive       int
+	viewCreateErr    bool // if true, CreateView returns -1
+	lastViewLang     string
+	lastViewLangID   int
+	lastViewReadOnly bool
+	lastViewA11y     bool
+	lastViewTimezone string
 }
+
+const fakeViewIDBase = 1000
 
 type fakeLib struct{}
 
@@ -109,6 +124,76 @@ func (f *fakeBackend) DocumentDestroy(documentHandle) {
 	// Not mutex-guarded: withFakeBackend forbids t.Parallel() so
 	// concurrent access is a programmer bug.
 	f.docDestroys++
+}
+
+func (f *fakeBackend) DocumentCreateView(documentHandle) int {
+	if f.viewCreateErr {
+		return -1
+	}
+	if f.viewsNextID == 0 {
+		f.viewsNextID = fakeViewIDBase
+	}
+	id := f.viewsNextID
+	f.viewsNextID++
+	f.viewsLive = append(f.viewsLive, id)
+	f.viewActive = id
+	return id
+}
+
+func (f *fakeBackend) DocumentCreateViewWithOptions(d documentHandle, _ string) int {
+	return f.DocumentCreateView(d)
+}
+
+func (f *fakeBackend) DocumentDestroyView(_ documentHandle, id int) {
+	for i, v := range f.viewsLive {
+		if v == id {
+			f.viewsLive = append(f.viewsLive[:i], f.viewsLive[i+1:]...)
+			break
+		}
+	}
+	// Active-view fallback: fake-only convention. Real LOK's
+	// getView() behaviour after destroying the current view is
+	// undocumented (likely returns a stale ID or falls back to the
+	// remaining default view). For the fake, pick a deterministic
+	// successor so tests can assert View()/SetView() interactions.
+	if f.viewActive == id && len(f.viewsLive) > 0 {
+		f.viewActive = f.viewsLive[0]
+	} else if f.viewActive == id {
+		f.viewActive = -1
+	}
+}
+
+func (f *fakeBackend) DocumentSetView(_ documentHandle, id int) {
+	f.viewActive = id
+}
+
+func (f *fakeBackend) DocumentGetView(documentHandle) int       { return f.viewActive }
+func (f *fakeBackend) DocumentGetViewsCount(documentHandle) int { return len(f.viewsLive) }
+
+func (f *fakeBackend) DocumentGetViewIds(documentHandle) ([]int, bool) {
+	if len(f.viewsLive) == 0 {
+		return nil, true
+	}
+	out := make([]int, len(f.viewsLive))
+	copy(out, f.viewsLive)
+	return out, true
+}
+
+func (f *fakeBackend) DocumentSetViewLanguage(_ documentHandle, id int, lang string) {
+	f.lastViewLangID = id
+	f.lastViewLang = lang
+}
+
+func (f *fakeBackend) DocumentSetViewReadOnly(_ documentHandle, _ int, ro bool) {
+	f.lastViewReadOnly = ro
+}
+
+func (f *fakeBackend) DocumentSetAccessibilityState(_ documentHandle, _ int, en bool) {
+	f.lastViewA11y = en
+}
+
+func (f *fakeBackend) DocumentSetViewTimezone(_ documentHandle, _ int, tz string) {
+	f.lastViewTimezone = tz
 }
 
 // withFakeBackend swaps the package-level backend + singleton. It

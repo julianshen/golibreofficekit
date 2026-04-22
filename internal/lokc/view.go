@@ -29,7 +29,9 @@ static int go_doc_get_view(LibreOfficeKitDocument* d) {
     return d->pClass->getView(d);
 }
 static int go_doc_get_views_count(LibreOfficeKitDocument* d) {
-    if (d == NULL || d->pClass == NULL || d->pClass->getViewsCount == NULL) return 0;
+    // -1 signals "vtable unavailable" so DocumentGetViewIds can
+    // distinguish it from the legitimate zero-views case (0).
+    if (d == NULL || d->pClass == NULL || d->pClass->getViewsCount == NULL) return -1;
     return d->pClass->getViewsCount(d);
 }
 static bool go_doc_get_view_ids(LibreOfficeKitDocument* d, int* buf, size_t n) {
