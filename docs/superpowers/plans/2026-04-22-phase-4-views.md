@@ -33,6 +33,12 @@ plan returns `(ViewID, error)` so a closed-doc call can surface
 applied to `Views() ([]ViewID, error)`. Flag in the PR body.
 
 **Architecture:**
+- Sentinel: `ErrViewCreateFailed` in `lok/errors.go` so `CreateView`'s
+  `-1`-to-error mapping is matchable with `errors.Is` rather than a
+  raw magic-string Detail.
+- Helper: `(*Document).guard() (unlock func(), err error)` factors
+  the Lock + defer-Unlock + closed-check pattern used by ~8 of the
+  view methods. Single source of truth for post-Close semantics.
 - `internal/lokc` gains thin 1:1 wrappers: `DocumentCreateView`,
   `DocumentCreateViewWithOptions`, `DocumentDestroyView`,
   `DocumentSetView`, `DocumentGetView`, `DocumentGetViewsCount`,
@@ -45,11 +51,12 @@ applied to `Views() ([]ViewID, error)`. Flag in the PR body.
   takes a pre-allocated array + size and returns bool.
 - `ViewID` is a named `int` type for clarity at the Go surface;
   converts to `C.int` at the cgo boundary.
-- No new sentinel errors are required — `ErrClosed` already covers
+- One new sentinel: `ErrViewCreateFailed` for the `-1` return from
+  `createView` / `createViewWithOptions`. `ErrClosed` covers
   post-Close calls; `*LOKError{Op, Detail, err}` wraps backend
   failures (there aren't really any — the LOK view methods return
-  `void` or `int` without an error channel, so we only surface
-  "closed doc" and "invalid view ID" cases).
+  `void` or `int` without an error channel, so we mostly surface
+  "closed doc" and "view-create failed" cases).
 
 **Coverage gate:** unchanged at 90% across `./internal/lokc/...` +
 `./lok/...`.
@@ -440,6 +447,11 @@ func (f *fakeBackend) DocumentDestroyView(_ documentHandle, id int) {
 			break
 		}
 	}
+	// Active-view fallback: fake-only convention. Real LOK's
+	// getView() behaviour after destroying the current view is
+	// undocumented (likely returns a stale ID or falls back to the
+	// remaining default view). For the fake, pick a deterministic
+	// successor so tests can assert View()/SetView() interactions.
 	if f.viewActive == id && len(f.viewsLive) > 0 {
 		f.viewActive = f.viewsLive[0]
 	} else if f.viewActive == id {
@@ -674,7 +686,14 @@ func TestView_AfterCloseErrors(t *testing.T) {
 
 Expect build errors for `CreateView`, `CreateViewWithOptions`, `DestroyView`, `SetView`, `View`, `Views`.
 
-### Step 3: Create `lok/view.go`
+### Step 3: Add `ErrViewCreateFailed` to `lok/errors.go`
+
+```go
+// In the existing sentinel block:
+ErrViewCreateFailed = errors.New("lok: view creation failed")
+```
+
+### Step 4: Create `lok/view.go`
 
 ```go
 //go:build linux || darwin
@@ -685,18 +704,30 @@ package lok
 // ViewID exists for self-documenting call sites.
 type ViewID int
 
-// CreateView creates a new view on the document and returns its ID.
-// Returns ErrClosed on a closed document; wraps a backend error as
-// *LOKError if LOK rejects the call.
-func (d *Document) CreateView() (ViewID, error) {
+// guard locks the Office mutex and verifies the document is still
+// open. Callers defer the returned unlock func. Factors the
+// Lock/defer-Unlock/closed-check pattern used by every view method.
+func (d *Document) guard() (unlock func(), err error) {
 	d.office.mu.Lock()
-	defer d.office.mu.Unlock()
 	if d.closed {
-		return 0, ErrClosed
+		d.office.mu.Unlock()
+		return func() {}, ErrClosed
 	}
+	return d.office.mu.Unlock, nil
+}
+
+// CreateView creates a new view on the document and returns its ID.
+// Returns ErrClosed on a closed document; ErrViewCreateFailed wrapped
+// in *LOKError if LOK returns -1.
+func (d *Document) CreateView() (ViewID, error) {
+	unlock, err := d.guard()
+	if err != nil {
+		return 0, err
+	}
+	defer unlock()
 	id := d.office.be.DocumentCreateView(d.h)
 	if id < 0 {
-		return 0, &LOKError{Op: "CreateView", Detail: "LOK returned -1"}
+		return 0, &LOKError{Op: "CreateView", Detail: "LOK returned -1", err: ErrViewCreateFailed}
 	}
 	return ViewID(id), nil
 }
@@ -704,14 +735,14 @@ func (d *Document) CreateView() (ViewID, error) {
 // CreateViewWithOptions forwards a raw options string to
 // pClass->createViewWithOptions. Same error contract as CreateView.
 func (d *Document) CreateViewWithOptions(options string) (ViewID, error) {
-	d.office.mu.Lock()
-	defer d.office.mu.Unlock()
-	if d.closed {
-		return 0, ErrClosed
+	unlock, err := d.guard()
+	if err != nil {
+		return 0, err
 	}
+	defer unlock()
 	id := d.office.be.DocumentCreateViewWithOptions(d.h, options)
 	if id < 0 {
-		return 0, &LOKError{Op: "CreateViewWithOptions", Detail: "LOK returned -1"}
+		return 0, &LOKError{Op: "CreateViewWithOptions", Detail: "LOK returned -1", err: ErrViewCreateFailed}
 	}
 	return ViewID(id), nil
 }
@@ -719,11 +750,11 @@ func (d *Document) CreateViewWithOptions(options string) (ViewID, error) {
 // DestroyView removes the view. LOK returns void, so errors surface
 // only from the closed-doc check.
 func (d *Document) DestroyView(id ViewID) error {
-	d.office.mu.Lock()
-	defer d.office.mu.Unlock()
-	if d.closed {
-		return ErrClosed
+	unlock, err := d.guard()
+	if err != nil {
+		return err
 	}
+	defer unlock()
 	d.office.be.DocumentDestroyView(d.h, int(id))
 	return nil
 }
@@ -731,32 +762,32 @@ func (d *Document) DestroyView(id ViewID) error {
 // SetView activates the view. LOK returns void; caller should
 // confirm via View() if the ID is trusted.
 func (d *Document) SetView(id ViewID) error {
-	d.office.mu.Lock()
-	defer d.office.mu.Unlock()
-	if d.closed {
-		return ErrClosed
+	unlock, err := d.guard()
+	if err != nil {
+		return err
 	}
+	defer unlock()
 	d.office.be.DocumentSetView(d.h, int(id))
 	return nil
 }
 
 // View returns the currently-active view ID.
 func (d *Document) View() (ViewID, error) {
-	d.office.mu.Lock()
-	defer d.office.mu.Unlock()
-	if d.closed {
-		return 0, ErrClosed
+	unlock, err := d.guard()
+	if err != nil {
+		return 0, err
 	}
+	defer unlock()
 	return ViewID(d.office.be.DocumentGetView(d.h)), nil
 }
 
 // Views returns the IDs of all live views in document order.
 func (d *Document) Views() ([]ViewID, error) {
-	d.office.mu.Lock()
-	defer d.office.mu.Unlock()
-	if d.closed {
-		return nil, ErrClosed
+	unlock, err := d.guard()
+	if err != nil {
+		return nil, err
 	}
+	defer unlock()
 	raw := d.office.be.DocumentGetViewIds(d.h)
 	if raw == nil {
 		return nil, nil
@@ -769,11 +800,11 @@ func (d *Document) Views() ([]ViewID, error) {
 }
 ```
 
-### Step 4: Run tests — green
+### Step 5: Run tests — green
 
 Run: `go test -race ./lok/...` → PASS.
 
-### Step 5: Commit
+### Step 6: Commit
 
 ```bash
 git add lok/view.go lok/view_test.go
@@ -874,22 +905,22 @@ func TestViewConfigurators_AfterCloseErrors(t *testing.T) {
 ```go
 // SetViewLanguage sets the UI language tag for a specific view.
 func (d *Document) SetViewLanguage(id ViewID, lang string) error {
-	d.office.mu.Lock()
-	defer d.office.mu.Unlock()
-	if d.closed {
-		return ErrClosed
+	unlock, err := d.guard()
+	if err != nil {
+		return err
 	}
+	defer unlock()
 	d.office.be.DocumentSetViewLanguage(d.h, int(id), lang)
 	return nil
 }
 
 // SetViewReadOnly toggles the read-only state of a specific view.
 func (d *Document) SetViewReadOnly(id ViewID, readOnly bool) error {
-	d.office.mu.Lock()
-	defer d.office.mu.Unlock()
-	if d.closed {
-		return ErrClosed
+	unlock, err := d.guard()
+	if err != nil {
+		return err
 	}
+	defer unlock()
 	d.office.be.DocumentSetViewReadOnly(d.h, int(id), readOnly)
 	return nil
 }
@@ -897,11 +928,11 @@ func (d *Document) SetViewReadOnly(id ViewID, readOnly bool) error {
 // SetAccessibilityState turns the per-view accessibility pipeline
 // (a11y tree generation, focus reporting) on or off.
 func (d *Document) SetAccessibilityState(id ViewID, enabled bool) error {
-	d.office.mu.Lock()
-	defer d.office.mu.Unlock()
-	if d.closed {
-		return ErrClosed
+	unlock, err := d.guard()
+	if err != nil {
+		return err
 	}
+	defer unlock()
 	d.office.be.DocumentSetAccessibilityState(d.h, int(id), enabled)
 	return nil
 }
@@ -909,11 +940,11 @@ func (d *Document) SetAccessibilityState(id ViewID, enabled bool) error {
 // SetViewTimezone sets the IANA tz name (e.g. "Europe/Berlin") for
 // the given view. Empty string falls back to LO's default.
 func (d *Document) SetViewTimezone(id ViewID, tz string) error {
-	d.office.mu.Lock()
-	defer d.office.mu.Unlock()
-	if d.closed {
-		return ErrClosed
+	unlock, err := d.guard()
+	if err != nil {
+		return err
 	}
+	defer unlock()
 	d.office.be.DocumentSetViewTimezone(d.h, int(id), tz)
 	return nil
 }
@@ -1003,6 +1034,13 @@ After the existing document round-trip blocks, add:
 
 	if err := doc.DestroyView(newView); err != nil {
 		t.Errorf("DestroyView: %v", err)
+	}
+
+	// Restore the initial view as active so any subsequent subtest
+	// (current or future) starts from a deterministic state rather
+	// than whatever fallback LO picked after DestroyView.
+	if err := doc.SetView(initialView); err != nil {
+		t.Errorf("SetView restore: %v", err)
 	}
 ```
 
