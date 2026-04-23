@@ -4,6 +4,7 @@ package lok
 
 import (
 	"errors"
+	"slices"
 	"testing"
 )
 
@@ -194,8 +195,11 @@ func TestParsePartPageRectangles_Direct(t *testing.T) {
 			t.Errorf("input %q: err=%v, wantErr=%v", tc.in, err, tc.err)
 			continue
 		}
-		if !tc.err && len(got) != len(tc.want) {
-			t.Errorf("input %q: len=%d, want %d", tc.in, len(got), len(tc.want))
+		if tc.err {
+			continue
+		}
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("input %q: got %+v, want %+v", tc.in, got, tc.want)
 		}
 	}
 }
