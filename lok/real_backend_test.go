@@ -212,3 +212,38 @@ func TestRealBackend_ViewForwarding(t *testing.T) {
 	rb.DocumentSetAccessibilityState(rdoc, 0, true)
 	rb.DocumentSetViewTimezone(rdoc, 0, "UTC")
 }
+
+// TestRealBackend_PartForwarding covers the 10 part forwarders via
+// a lokc fake DocumentHandle. All return values reflect the
+// guarded-NULL path in internal/lokc.
+func TestRealBackend_PartForwarding(t *testing.T) {
+	rb := realBackend{}
+	fakeDocHandle := lokc.NewFakeDocumentHandle()
+	defer lokc.FreeFakeDocumentHandle(fakeDocHandle)
+	rdoc := realDocumentHandle{d: fakeDocHandle}
+
+	if got := rb.DocumentGetParts(rdoc); got != -1 {
+		t.Errorf("GetParts: got %d, want -1", got)
+	}
+	if got := rb.DocumentGetPart(rdoc); got != -1 {
+		t.Errorf("GetPart: got %d, want -1", got)
+	}
+	if got := rb.DocumentGetPartName(rdoc, 0); got != "" {
+		t.Errorf("GetPartName: got %q, want empty", got)
+	}
+	if got := rb.DocumentGetPartHash(rdoc, 0); got != "" {
+		t.Errorf("GetPartHash: got %q, want empty", got)
+	}
+	if got := rb.DocumentGetPartInfo(rdoc, 0); got != "" {
+		t.Errorf("GetPartInfo: got %q, want empty", got)
+	}
+	if got := rb.DocumentGetPartPageRectangles(rdoc); got != "" {
+		t.Errorf("GetPartPageRectangles: got %q, want empty", got)
+	}
+	if w, h := rb.DocumentGetDocumentSize(rdoc); w != 0 || h != 0 {
+		t.Errorf("GetDocumentSize: got (%d, %d), want (0, 0)", w, h)
+	}
+	rb.DocumentSetPart(rdoc, 0)
+	rb.DocumentSetPartMode(rdoc, 0)
+	rb.DocumentSetOutlineState(rdoc, false, 0, 0, false)
+}

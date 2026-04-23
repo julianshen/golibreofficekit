@@ -46,6 +46,24 @@ type fakeBackend struct {
 	lastViewReadOnly bool
 	lastViewA11y     bool
 	lastViewTimezone string
+
+	// Part state. partsCount convention: -1 = simulate LOK backend
+	// failure (matches internal/lokc's return-on-NULL-pClass);
+	// 0+ = real part count. Fresh `&fakeBackend{}` is 0-part.
+	partsCount     int
+	partActive     int
+	partNames      map[int]string
+	partHashes     map[int]string
+	partInfos      map[int]string
+	partRects      string
+	docWidthTwips  int64
+	docHeightTwips int64
+	lastPartMode   int
+
+	lastOutlineCol    bool
+	lastOutlineLevel  int
+	lastOutlineIndex  int
+	lastOutlineHidden bool
 }
 
 const fakeViewIDBase = 1000
@@ -401,4 +419,46 @@ func TestRemainingMethods_AfterCloseErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- Part / size fake methods ---
+
+func (f *fakeBackend) DocumentGetParts(documentHandle) int { return f.partsCount }
+func (f *fakeBackend) DocumentGetPart(documentHandle) int  { return f.partActive }
+
+func (f *fakeBackend) DocumentSetPart(_ documentHandle, n int) {
+	if n >= 0 && n < f.partsCount {
+		f.partActive = n
+	}
+}
+
+func (f *fakeBackend) DocumentSetPartMode(_ documentHandle, mode int) {
+	f.lastPartMode = mode
+}
+
+func (f *fakeBackend) DocumentGetPartName(_ documentHandle, n int) string {
+	return f.partNames[n]
+}
+
+func (f *fakeBackend) DocumentGetPartHash(_ documentHandle, n int) string {
+	return f.partHashes[n]
+}
+
+func (f *fakeBackend) DocumentGetPartInfo(_ documentHandle, n int) string {
+	return f.partInfos[n]
+}
+
+func (f *fakeBackend) DocumentGetPartPageRectangles(documentHandle) string {
+	return f.partRects
+}
+
+func (f *fakeBackend) DocumentGetDocumentSize(documentHandle) (int64, int64) {
+	return f.docWidthTwips, f.docHeightTwips
+}
+
+func (f *fakeBackend) DocumentSetOutlineState(_ documentHandle, column bool, level, index int, hidden bool) {
+	f.lastOutlineCol = column
+	f.lastOutlineLevel = level
+	f.lastOutlineIndex = index
+	f.lastOutlineHidden = hidden
 }

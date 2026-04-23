@@ -33,6 +33,17 @@ type backend interface {
 	DocumentSetViewReadOnly(d documentHandle, id int, readOnly bool)
 	DocumentSetAccessibilityState(d documentHandle, id int, enabled bool)
 	DocumentSetViewTimezone(d documentHandle, id int, tz string)
+
+	DocumentGetParts(d documentHandle) int
+	DocumentGetPart(d documentHandle) int
+	DocumentSetPart(d documentHandle, n int)
+	DocumentSetPartMode(d documentHandle, mode int)
+	DocumentGetPartName(d documentHandle, n int) string
+	DocumentGetPartHash(d documentHandle, n int) string
+	DocumentGetPartInfo(d documentHandle, n int) string
+	DocumentGetPartPageRectangles(d documentHandle) string
+	DocumentGetDocumentSize(d documentHandle) (int64, int64)
+	DocumentSetOutlineState(d documentHandle, column bool, level, index int, hidden bool)
 }
 
 // libraryHandle and officeHandle are opaque across the boundary.
