@@ -227,9 +227,9 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 		t.Logf("Parts=0 (Writer documents don't enumerate parts); skipping per-part subtests")
 	}
 
-	// NOTE: DocumentSize() and PartPageRectangles() deterministically
-	// trigger the SA_ONSTACK signal-handler crash on a Writer doc
-	// without initializeForRendering. Phase 6 (Rendering) will add
-	// InitializeForRendering and cover both methods in integration
-	// after calling it. Unit tests cover them today.
+	// DocumentSize() and PartPageRectangles() are intentionally
+	// omitted: both deterministically trigger the SA_ONSTACK
+	// signal-handler crash on a Writer doc loaded without
+	// initializeForRendering. Add them here once the doc is
+	// initialised for rendering. Unit tests cover them today.
 }
