@@ -181,6 +181,8 @@ func TestParsePartPageRectangles_Direct(t *testing.T) {
 		err  bool
 	}{
 		{"", nil, false},
+		{";", nil, false},
+		{"; ;", nil, false},
 		{"0, 0, 100, 200", []TwipRect{{0, 0, 100, 200}}, false},
 		{"0,0,100,200", []TwipRect{{0, 0, 100, 200}}, false},
 		{"0, 0, 100, 200; 100, 0, 50, 200", []TwipRect{{0, 0, 100, 200}, {100, 0, 50, 200}}, false},
@@ -211,7 +213,7 @@ func TestSetOutlineState_PassesParams(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !fb.lastOutlineCol || fb.lastOutlineLevel != 2 || fb.lastOutlineIndex != 5 || !fb.lastOutlineHidden {
-		t.Errorf("outline state recorded (col=%v, lvl=%d, idx=%d, hidden=%v)",
+		t.Errorf("outline state: got (col=%v, lvl=%d, idx=%d, hidden=%v), want (true, 2, 5, true)",
 			fb.lastOutlineCol, fb.lastOutlineLevel, fb.lastOutlineIndex, fb.lastOutlineHidden)
 	}
 }

@@ -42,7 +42,9 @@ func (d *Document) Part() (int, error) {
 	return n, nil
 }
 
-// SetPart activates the part at index n.
+// SetPart activates the part at index n. Fire-and-forget at the LOK
+// level (the underlying API is void), so a nil return only means no
+// ErrClosed occurred — it does not confirm LOK accepted n.
 func (d *Document) SetPart(n int) error {
 	unlock, err := d.guard()
 	if err != nil {
@@ -55,6 +57,8 @@ func (d *Document) SetPart(n int) error {
 
 // SetPartMode switches the part-mode (Calc's "view" mode, etc.).
 // Values are the LOK_PARTMODE_* enums from LibreOfficeKitEnums.h.
+// Fire-and-forget at the LOK level; a nil return does not confirm
+// the mode actually changed.
 func (d *Document) SetPartMode(mode int) error {
 	unlock, err := d.guard()
 	if err != nil {
@@ -104,7 +108,12 @@ func (d *Document) PartInfo(n int) (json.RawMessage, error) {
 	return json.RawMessage(raw), nil
 }
 
-// DocumentSize returns the document's (width, height) in twips.
+// DocumentSize returns the document's (width, height) in twips. The
+// underlying LOK call has no failure sentinel: an unavailable
+// vtable, a guarded-NULL handle, or a freshly-opened doc whose
+// layout hasn't resolved all yield (0, 0) with a nil error. Callers
+// that must distinguish "unknown" from "zero-sized" should treat
+// (0, 0) as unknown.
 func (d *Document) DocumentSize() (widthTwips, heightTwips int64, err error) {
 	unlock, gerr := d.guard()
 	if gerr != nil {
@@ -134,7 +143,8 @@ func (d *Document) PartPageRectangles() ([]TwipRect, error) {
 // SetOutlineState toggles outline-group visibility. column=true for
 // Calc column grouping, false for row grouping. level is the outline
 // depth; index is the group index at that level. hidden collapses
-// the group when true.
+// the group when true. Fire-and-forget at the LOK level; a nil
+// return does not confirm the group state actually changed.
 func (d *Document) SetOutlineState(column bool, level, index int, hidden bool) error {
 	unlock, err := d.guard()
 	if err != nil {
@@ -146,9 +156,9 @@ func (d *Document) SetOutlineState(column bool, level, index int, hidden bool) e
 }
 
 // parsePartPageRectangles parses LOK's "x, y, w, h; x, y, w, h; …"
-// format into a []TwipRect. Empty input yields (nil, nil). Trailing
-// semicolons and whitespace are tolerated. Malformed input surfaces
-// as *LOKError.
+// format into a []TwipRect. Empty input (including separator-only
+// input like ";") yields (nil, nil). Trailing semicolons and
+// whitespace are tolerated. Malformed input surfaces as *LOKError.
 func parsePartPageRectangles(s string) ([]TwipRect, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -174,6 +184,9 @@ func parsePartPageRectangles(s string) ([]TwipRect, error) {
 			vals[i] = v
 		}
 		out = append(out, TwipRect{X: vals[0], Y: vals[1], W: vals[2], H: vals[3]})
+	}
+	if len(out) == 0 {
+		return nil, nil
 	}
 	return out, nil
 }
