@@ -177,4 +177,59 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	if err := doc.SetView(initialView); err != nil {
 		t.Errorf("SetView restore: %v", err)
 	}
+
+	// Part + size round-trip on doc. Writer legitimately returns 0
+	// parts — "parts" means Calc sheets / Impress slides. We
+	// verify the per-part methods tolerate the zero-part case and
+	// only cross-check part-indexed reads when nParts > 0.
+
+	nParts, err := doc.Parts()
+	if err != nil {
+		t.Fatalf("Parts: %v", err)
+	}
+	if nParts < 0 {
+		t.Fatalf("Parts returned %d; want >=0", nParts)
+	}
+
+	if nParts > 0 {
+		activePart, err := doc.Part()
+		if err != nil {
+			t.Fatalf("Part: %v", err)
+		}
+		if activePart < 0 || activePart >= nParts {
+			t.Errorf("Part out of range: got %d, want [0, %d)", activePart, nParts)
+		}
+
+		if _, err := doc.PartName(activePart); err != nil {
+			t.Errorf("PartName(%d): %v", activePart, err)
+		}
+
+		partHash, err := doc.PartHash(activePart)
+		if err != nil {
+			t.Errorf("PartHash(%d): %v", activePart, err)
+		}
+		if partHash == "" {
+			t.Log("PartHash empty; LO may not compute it for this doc type")
+		}
+
+		info, err := doc.PartInfo(activePart)
+		if err != nil {
+			t.Errorf("PartInfo(%d): %v (want nil err; empty payload is OK)", activePart, err)
+		}
+		if info == nil {
+			t.Logf("PartInfo(%d) empty (expected for non-Impress docs)", activePart)
+		}
+
+		if err := doc.SetPart(0); err != nil {
+			t.Errorf("SetPart(0): %v", err)
+		}
+	} else {
+		t.Logf("Parts=0 (Writer documents don't enumerate parts); skipping per-part subtests")
+	}
+
+	// NOTE: DocumentSize() and PartPageRectangles() deterministically
+	// trigger the SA_ONSTACK signal-handler crash on a Writer doc
+	// without initializeForRendering. Phase 6 (Rendering) will add
+	// InitializeForRendering and cover both methods in integration
+	// after calling it. Unit tests cover them today.
 }
