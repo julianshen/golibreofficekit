@@ -39,6 +39,34 @@ relax them without an explicit instruction.
    add tests or justify the gap explicitly in the PR description. cgo
    trampolines that cannot be exercised in unit tests should be isolated
    into thin files so coverage is measured on the Go logic around them.
+7. **No shortcuts.** If a problem looks hard, the right move is to
+   understand it — not to route around it. Do not disable a check,
+   relax a lint rule, lower a threshold, add a `// nolint`, skip a
+   build tag, tack on `|| true`, or reach for `--no-verify` to make
+   output green. Every one of those is a shortcut; stop and surface
+   the underlying issue.
+8. **Test enforcement — don't skip failing tests.** A failing test is
+   a defect signal. Do not `t.Skip`, comment out the assertion, mark
+   the test `_test_disabled`, move it behind a never-set build tag,
+   or lower the expectation to make it pass. Fix the code, fix the
+   test (only if the test is genuinely wrong), or escalate. If a test
+   is genuinely platform-specific, gate it with the precise platform
+   tag and say so in the PR body — do not hide the skip.
+9. **Complete implementation — do not skip debugging or silently
+   reduce scope.** When something misbehaves, trace the root cause.
+   Do not work around a crash by removing the call that triggers it,
+   shrink a feature's public surface without notice, stub out a path
+   with `// TODO`, or defer a requirement to "a later phase" without
+   explicit user sign-off. The scope the user approved is the scope
+   that ships.
+10. **Ask the user before cutting or removing any feature.** If a
+    planned method, option, test, fixture, or behaviour cannot be
+    implemented as agreed — for any reason, including "LOK
+    crashes", "too flaky", "out of scope of this PR", or "I'd rather
+    defer to Phase N" — pause and ask. Do not unilaterally delete,
+    rename, deprecate, or neuter. Even removing a method from an
+    integration smoke test counts: state the reason, propose an
+    alternative, and wait for an answer.
 
 ## LibreOfficeKit — what future Claude needs to know
 
