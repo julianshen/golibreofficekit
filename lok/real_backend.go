@@ -151,6 +151,37 @@ func (realBackend) DocumentSetViewTimezone(d documentHandle, id int, tz string) 
 	lokc.DocumentSetViewTimezone(mustDoc(d).d, id, tz)
 }
 
+func (realBackend) DocumentGetParts(d documentHandle) int {
+	return lokc.DocumentGetParts(mustDoc(d).d)
+}
+func (realBackend) DocumentGetPart(d documentHandle) int {
+	return lokc.DocumentGetPart(mustDoc(d).d)
+}
+func (realBackend) DocumentSetPart(d documentHandle, n int) {
+	lokc.DocumentSetPart(mustDoc(d).d, n)
+}
+func (realBackend) DocumentSetPartMode(d documentHandle, mode int) {
+	lokc.DocumentSetPartMode(mustDoc(d).d, mode)
+}
+func (realBackend) DocumentGetPartName(d documentHandle, n int) string {
+	return lokc.DocumentGetPartName(mustDoc(d).d, n)
+}
+func (realBackend) DocumentGetPartHash(d documentHandle, n int) string {
+	return lokc.DocumentGetPartHash(mustDoc(d).d, n)
+}
+func (realBackend) DocumentGetPartInfo(d documentHandle, n int) string {
+	return lokc.DocumentGetPartInfo(mustDoc(d).d, n)
+}
+func (realBackend) DocumentGetPartPageRectangles(d documentHandle) string {
+	return lokc.DocumentGetPartPageRectangles(mustDoc(d).d)
+}
+func (realBackend) DocumentGetDocumentSize(d documentHandle) (int64, int64) {
+	return lokc.DocumentGetDocumentSize(mustDoc(d).d)
+}
+func (realBackend) DocumentSetOutlineState(d documentHandle, column bool, level, index int, hidden bool) {
+	lokc.DocumentSetOutlineState(mustDoc(d).d, column, level, index, hidden)
+}
+
 func init() {
 	setBackend(realBackend{})
 }
