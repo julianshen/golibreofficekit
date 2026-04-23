@@ -96,19 +96,6 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 		t.Errorf("SaveAs pdf: %v", err)
 	}
 
-	data, err := os.ReadFile(fixture)
-	if err != nil {
-		t.Fatal(err)
-	}
-	doc2, err := o.LoadFromReader(bytes.NewReader(data), "odt")
-	if err != nil {
-		t.Fatalf("LoadFromReader: %v", err)
-	}
-	defer doc2.Close()
-	if got := doc2.Type(); got != TypeText {
-		t.Errorf("reader-loaded Type()=%v, want Text", got)
-	}
-
 	// View round-trip on doc.
 
 	initialView, err := doc.View()
@@ -167,15 +154,17 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 		t.Errorf("SetViewTimezone: %v", err)
 	}
 
-	if err := doc.DestroyView(newView); err != nil {
-		t.Errorf("DestroyView: %v", err)
-	}
-
-	// Restore the initial view as active so any subsequent subtest
-	// starts from a deterministic state rather than whatever
-	// fallback LO picked after DestroyView.
+	// Switch active view away BEFORE destroying. Destroying the
+	// currently-active view leaves LO without a valid active view,
+	// and subsequent layout queries (DocumentSize,
+	// PartPageRectangles) then crash with a SIGWINCH/SA_ONSTACK
+	// abort. Verified experimentally 2026-04-23 via
+	// TestScratch_DestroyViewThenSize vs. _SwapThenDestroyThenSize.
 	if err := doc.SetView(initialView); err != nil {
 		t.Errorf("SetView restore: %v", err)
+	}
+	if err := doc.DestroyView(newView); err != nil {
+		t.Errorf("DestroyView: %v", err)
 	}
 
 	// Part + size round-trip on doc. Writer legitimately returns 0
@@ -227,9 +216,45 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 		t.Logf("Parts=0 (Writer documents don't enumerate parts); skipping per-part subtests")
 	}
 
-	// DocumentSize() and PartPageRectangles() are intentionally
-	// omitted: both deterministically trigger the SA_ONSTACK
-	// signal-handler crash on a Writer doc loaded without
-	// initializeForRendering. Add them here once the doc is
-	// initialised for rendering. Unit tests cover them today.
+	// DocumentSize and PartPageRectangles. These crash if called
+	// when the active view has just been destroyed (see the
+	// SetView-before-DestroyView reorder above); with a valid
+	// active view they work on a Writer doc even before
+	// InitializeForRendering.
+	w, h, err := doc.DocumentSize()
+	if err != nil {
+		t.Errorf("DocumentSize: %v", err)
+	}
+	if w <= 0 || h <= 0 {
+		t.Errorf("DocumentSize=(%d, %d); want both positive", w, h)
+	}
+
+	rects, err := doc.PartPageRectangles()
+	if err != nil {
+		t.Errorf("PartPageRectangles: %v", err)
+	}
+	if len(rects) == 0 {
+		t.Log("PartPageRectangles empty; LO may not compute rectangles for this doc type")
+	}
+
+	// LoadFromReader deliberately comes last. Loading a second
+	// document into the same office before a view dance on the first
+	// doc puts LO's layout engine in a state where the subsequent
+	// DestroyView leaves DocumentSize/PartPageRectangles unable to
+	// query layout (2026-04-23 repro:
+	// TestScratch_LoadReaderAfterViewDance PASS vs.
+	// TestScratch_LoadReaderDestroyNonActiveThenSize FAIL). Keep
+	// LoadFromReader after all layout queries on doc.
+	data, err := os.ReadFile(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc2, err := o.LoadFromReader(bytes.NewReader(data), "odt")
+	if err != nil {
+		t.Fatalf("LoadFromReader: %v", err)
+	}
+	defer doc2.Close()
+	if got := doc2.Type(); got != TypeText {
+		t.Errorf("reader-loaded Type()=%v, want Text", got)
+	}
 }
