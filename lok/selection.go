@@ -2,7 +2,10 @@
 
 package lok
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // SetTextSelectionType mirrors LOK_SETTEXTSELECTION_*.
 type SetTextSelectionType int
@@ -95,10 +98,8 @@ func validateMime(s string) error {
 	if s == "" || len(s) > 256 {
 		return &LOKError{Op: "mime", Detail: "mime type must be non-empty and <= 256 bytes", err: ErrInvalidOption}
 	}
-	for i := 0; i < len(s); i++ {
-		if s[i] == 0 {
-			return &LOKError{Op: "mime", Detail: "mime type contains NUL byte", err: ErrInvalidOption}
-		}
+	if strings.IndexByte(s, 0) >= 0 {
+		return &LOKError{Op: "mime", Detail: "mime type contains NUL byte", err: ErrInvalidOption}
 	}
 	return nil
 }

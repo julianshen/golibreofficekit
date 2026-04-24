@@ -56,10 +56,7 @@ static int go_doc_get_selection_type_and_text(LibreOfficeKitDocument* d,
 */
 import "C"
 
-import (
-	"errors"
-	"unsafe"
-)
+import "unsafe"
 
 // DocumentSetTextSelection forwards to pClass->setTextSelection.
 // typ is LOK_SETTEXTSELECTION_START|END|RESET; x, y are twips.
@@ -112,11 +109,6 @@ func DocumentGetTextSelection(d DocumentHandle, mimeType string) (string, string
 	text := C.go_doc_get_text_selection(d.p, cmime, &usedMime)
 	return copyAndFree(text), copyAndFree(usedMime)
 }
-
-// ErrUnsupported is returned when the LOK function pointer for an
-// operation is NULL on the loaded LibreOffice build. The public
-// lok.ErrUnsupported sentinel wraps this.
-var ErrUnsupported = errors.New("lokc: LOK vtable slot is NULL")
 
 // DocumentGetSelectionType returns the LOK_SELTYPE_* value for the
 // current selection, or -1 when the handle or vtable slot is NULL.

@@ -73,8 +73,8 @@ func TestGetTextSelection_ForwardsArgsAndStrings(t *testing.T) {
 	if text != "hello" || usedMime != "text/plain;charset=utf-8" {
 		t.Errorf("got (%q, %q), want (hello, text/plain;charset=utf-8)", text, usedMime)
 	}
-	if fb.lastGetSelectionMime != "text/plain" {
-		t.Errorf("mime forwarded = %q, want text/plain", fb.lastGetSelectionMime)
+	if fb.lastGetTextSelectionMime != "text/plain" {
+		t.Errorf("mime forwarded = %q, want text/plain", fb.lastGetTextSelectionMime)
 	}
 }
 
@@ -236,7 +236,7 @@ func TestResetSelection_Forwards(t *testing.T) {
 	doc, _ := o.Load("/tmp/x.odt")
 	defer doc.Close()
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if err := doc.ResetSelection(); err != nil {
 			t.Fatal(err)
 		}

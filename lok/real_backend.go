@@ -274,8 +274,6 @@ func (realBackend) DocumentSetClipboard(d documentHandle, items []clipboardItemI
 	return err
 }
 
-// var _ backend = realBackend{} is a compile-time assertion that
-// realBackend satisfies the full backend interface.
 var _ backend = realBackend{}
 
 func init() {

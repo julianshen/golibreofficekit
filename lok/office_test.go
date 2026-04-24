@@ -102,12 +102,12 @@ type fakeBackend struct {
 	lastUnoArgs     string
 	lastUnoNotify   bool
 
-	// Selection state (Phase 8).
-	lastGetSelectionMime string
-	selectionText        string
-	selectionUsedMime    string
-	selectionKind        int
-	selectionTypeTextErr error
+	lastGetTextSelectionMime     string
+	lastSelectionTypeAndTextMime string
+	selectionText                string
+	selectionUsedMime            string
+	selectionKind                int
+	selectionTypeTextErr         error
 
 	lastSetTextSelectionTyp int
 	lastSetTextSelectionX   int
@@ -119,7 +119,6 @@ type fakeBackend struct {
 	lastBlockedViewID       int
 	lastBlockedCSV          string
 
-	// Clipboard state (Phase 8).
 	lastGetClipboardMimes []string
 	getClipboardResult    []clipboardItemInternal
 	getClipboardErr       error
@@ -592,7 +591,7 @@ func (f *fakeBackend) DocumentSetBlockedCommandList(_ documentHandle, viewID int
 	f.lastBlockedCSV = csv
 }
 func (f *fakeBackend) DocumentGetTextSelection(_ documentHandle, mime string) (string, string) {
-	f.lastGetSelectionMime = mime
+	f.lastGetTextSelectionMime = mime
 	return f.selectionText, f.selectionUsedMime
 }
 
@@ -601,7 +600,7 @@ func (f *fakeBackend) DocumentGetSelectionType(documentHandle) int {
 }
 
 func (f *fakeBackend) DocumentGetSelectionTypeAndText(_ documentHandle, mime string) (int, string, string, error) {
-	f.lastGetSelectionMime = mime
+	f.lastSelectionTypeAndTextMime = mime
 	if f.selectionTypeTextErr != nil {
 		return -1, "", "", f.selectionTypeTextErr
 	}
