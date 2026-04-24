@@ -82,3 +82,91 @@ func requireInt32Rect(op string, r TwipRect) error {
 func imageBoundsForTile(pxW, pxH int) image.Rectangle {
 	return image.Rect(0, 0, pxW, pxH)
 }
+
+// PaintTileRaw writes premultiplied BGRA (Cairo ARGB32; byte order
+// B, G, R, A with RGB premultiplied by A) into buf. len(buf) must
+// equal exactly 4*pxW*pxH — wrong-size buffers return *LOKError
+// without invoking LOK. InitializeForRendering must have been
+// called first.
+//
+// buf's backing array is pinned by the Go runtime for the duration
+// of a single synchronous cgo call; LOK does not retain the pointer.
+// Do not hand buf to long-lived Go structures that might outlive
+// the call stack and then race with GC.
+func (d *Document) PaintTileRaw(buf []byte, pxW, pxH int, r TwipRect) error {
+	if err := checkPaintBuf("PaintTile", buf, pxW, pxH); err != nil {
+		return err
+	}
+	if err := requireInt32Rect("PaintTile", r); err != nil {
+		return err
+	}
+	unlock, err := d.guard()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if !d.tileModeReady {
+		return &LOKError{Op: "PaintTile", Detail: "InitializeForRendering not called"}
+	}
+	d.office.be.DocumentPaintTile(d.h, buf, pxW, pxH, int(r.X), int(r.Y), int(r.W), int(r.H))
+	return nil
+}
+
+// PaintPartTileRaw is PaintTileRaw for a specific part (sheet/page/
+// slide). mode is always 0 in the current binding; the LOK notes
+// mode (Impress) is not exposed yet.
+func (d *Document) PaintPartTileRaw(buf []byte, part, pxW, pxH int, r TwipRect) error {
+	if err := checkPaintBuf("PaintPartTile", buf, pxW, pxH); err != nil {
+		return err
+	}
+	if err := requireInt32Rect("PaintPartTile", r); err != nil {
+		return err
+	}
+	unlock, err := d.guard()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if !d.tileModeReady {
+		return &LOKError{Op: "PaintPartTile", Detail: "InitializeForRendering not called"}
+	}
+	d.office.be.DocumentPaintPartTile(d.h, buf, part, 0, pxW, pxH, int(r.X), int(r.Y), int(r.W), int(r.H))
+	return nil
+}
+
+// PaintTile paints a pxW×pxH tile and returns the result as straight
+// NRGBA. LOK is asked to write premul BGRA directly into img.Pix
+// (avoiding a scratch buffer), then unpremultiplyBGRAToNRGBA swizzles
+// in place via the dst==src aliasing contract. For hot paint loops
+// that can reuse a scratch buffer, prefer PaintTileRaw.
+func (d *Document) PaintTile(pxW, pxH int, r TwipRect) (*image.NRGBA, error) {
+	img := image.NewNRGBA(imageBoundsForTile(pxW, pxH))
+	if err := d.PaintTileRaw(img.Pix, pxW, pxH, r); err != nil {
+		return nil, err
+	}
+	unpremultiplyBGRAToNRGBA(img.Pix, img.Pix, pxW, pxH)
+	return img, nil
+}
+
+// PaintPartTile is PaintTile for a specific part. Same in-place
+// unpremultiply strategy as PaintTile.
+func (d *Document) PaintPartTile(part, pxW, pxH int, r TwipRect) (*image.NRGBA, error) {
+	img := image.NewNRGBA(imageBoundsForTile(pxW, pxH))
+	if err := d.PaintPartTileRaw(img.Pix, part, pxW, pxH, r); err != nil {
+		return nil, err
+	}
+	unpremultiplyBGRAToNRGBA(img.Pix, img.Pix, pxW, pxH)
+	return img, nil
+}
+
+// checkPaintBuf is the buffer-size precondition shared by the two
+// Raw paint methods. Returns *LOKError on mismatch; op labels which
+// caller ("PaintTile" or "PaintPartTile") so the error surface stays
+// consistent with the rest of the binding.
+func checkPaintBuf(op string, buf []byte, pxW, pxH int) error {
+	want := 4 * pxW * pxH
+	if len(buf) != want {
+		return &LOKError{Op: op, Detail: fmt.Sprintf("buffer size mismatch: len=%d, want %d", len(buf), want)}
+	}
+	return nil
+}

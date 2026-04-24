@@ -3,7 +3,9 @@
 package lok
 
 import (
+	"bytes"
 	"errors"
+	"image"
 	"testing"
 )
 
@@ -99,4 +101,146 @@ func TestSetClientVisibleArea_RejectsOverflow(t *testing.T) {
 	if lokErr.Op != "SetClientVisibleArea" {
 		t.Errorf("Op=%q, want SetClientVisibleArea", lokErr.Op)
 	}
+}
+
+func TestPaintTileRaw_PassesTileArgs(t *testing.T) {
+	fb := &fakeBackend{tileMode: 1}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.InitializeForRendering(""); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 4*256*256)
+	if err := doc.PaintTileRaw(buf, 256, 256, TwipRect{X: 10, Y: 20, W: 3000, H: 4000}); err != nil {
+		t.Fatal(err)
+	}
+	if len(fb.paintCalls) != 1 {
+		t.Fatalf("paintCalls: %d, want 1", len(fb.paintCalls))
+	}
+	got := fb.paintCalls[0]
+	want := fakePaint{pxW: 256, pxH: 256, x: 10, y: 20, w: 3000, h: 4000, bufLen: 4 * 256 * 256}
+	if got != want {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestPaintTileRaw_WrongBufferSizeErrors(t *testing.T) {
+	fb := &fakeBackend{tileMode: 1}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.InitializeForRendering(""); err != nil {
+		t.Fatal(err)
+	}
+	// Too small.
+	err := doc.PaintTileRaw(make([]byte, 10), 256, 256, TwipRect{})
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) {
+		t.Errorf("too-small: want *LOKError, got %T %v", err, err)
+	}
+	// Too large — exact match required.
+	err = doc.PaintTileRaw(make([]byte, 4*256*256+1), 256, 256, TwipRect{})
+	if !errors.As(err, &lokErr) {
+		t.Errorf("too-large: want *LOKError, got %T %v", err, err)
+	}
+	if len(fb.paintCalls) != 0 {
+		t.Errorf("paintCalls should be empty on size-mismatch; got %d", len(fb.paintCalls))
+	}
+}
+
+func TestPaintTileRaw_WithoutInitializeErrors(t *testing.T) {
+	fb := &fakeBackend{tileMode: 1}
+	_, doc := loadFakeDoc(t, fb)
+	err := doc.PaintTileRaw(make([]byte, 4*256*256), 256, 256, TwipRect{})
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) || lokErr.Op != "PaintTile" {
+		t.Errorf("want *LOKError{Op: PaintTile}, got %T %v", err, err)
+	}
+}
+
+func TestPaintTileRaw_RangeCheck(t *testing.T) {
+	fb := &fakeBackend{tileMode: 1}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.InitializeForRendering(""); err != nil {
+		t.Fatal(err)
+	}
+	err := doc.PaintTileRaw(make([]byte, 4), 1, 1, TwipRect{W: 1<<32 + 1})
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) {
+		t.Errorf("want *LOKError, got %T %v", err, err)
+	}
+	if len(fb.paintCalls) != 0 {
+		t.Error("paintCalls not empty after range error")
+	}
+}
+
+func TestPaintTile_AllocatesAndUnpremultiplies(t *testing.T) {
+	// Fake backend writes known premul BGRA into the caller's buffer;
+	// PaintTile should return NRGBA with the unpremultiplied values.
+	fb := &fakePaintingBackend{
+		fakeBackend: fakeBackend{tileMode: 1},
+		// Two pixels: opaque red, 50% red.
+		paintBytes: []byte{0, 0, 255, 255, 0, 0, 128, 128},
+	}
+	_, doc := loadFakeDocWithBackend(t, fb)
+	if err := doc.InitializeForRendering(""); err != nil {
+		t.Fatal(err)
+	}
+	img, err := doc.PaintTile(2, 1, TwipRect{W: 100, H: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []byte{255, 0, 0, 255, 255, 0, 0, 128}
+	if !bytes.Equal(img.Pix, want) {
+		t.Errorf("img.Pix=%v, want %v", img.Pix, want)
+	}
+	if img.Rect != image.Rect(0, 0, 2, 1) {
+		t.Errorf("img.Rect=%v, want (0,0)-(2,1)", img.Rect)
+	}
+}
+
+func TestPaintPartTileRaw_PassesPart(t *testing.T) {
+	fb := &fakeBackend{tileMode: 1}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.InitializeForRendering(""); err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.PaintPartTileRaw(make([]byte, 4*2*2), 3, 2, 2, TwipRect{W: 100, H: 100}); err != nil {
+		t.Fatal(err)
+	}
+	if len(fb.partPaintCalls) != 1 || fb.partPaintCalls[0].part != 3 {
+		t.Errorf("partPaintCalls=%+v", fb.partPaintCalls)
+	}
+}
+
+// fakePaintingBackend extends fakeBackend with a programmable tile
+// payload that PaintTile writes into the caller's buffer, so the
+// unpremultiply path has something deterministic to decode.
+type fakePaintingBackend struct {
+	fakeBackend
+	paintBytes []byte
+}
+
+func (f *fakePaintingBackend) DocumentPaintTile(_ documentHandle, buf []byte, pxW, pxH, x, y, w, h int) {
+	copy(buf, f.paintBytes)
+	f.paintCalls = append(f.paintCalls, fakePaint{pxW: pxW, pxH: pxH, x: x, y: y, w: w, h: h, bufLen: len(buf)})
+}
+
+// loadFakeDocWithBackend is loadFakeDoc for callers that need to
+// install a backend other than *fakeBackend (e.g. *fakePaintingBackend
+// which embeds it).
+func loadFakeDocWithBackend(t *testing.T, be backend) (*Office, *Document) {
+	t.Helper()
+	orig := currentBackend
+	t.Cleanup(func() { setBackend(orig); resetSingleton() })
+	setBackend(be)
+	resetSingleton()
+	o, err := New("/install")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := o.Load("/tmp/x.odt")
+	if err != nil {
+		o.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { doc.Close(); o.Close() })
+	return o, doc
 }
