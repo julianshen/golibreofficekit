@@ -155,3 +155,36 @@ func TestPostUnoCommand_ForwardsNotifyTrue(t *testing.T) {
 		t.Errorf("fakeBackend state=%+v", fb)
 	}
 }
+
+func TestInputMethods_AfterCloseErrors(t *testing.T) {
+	cases := []struct {
+		name string
+		call func(*Document) error
+	}{
+		{"PostKeyEvent", func(d *Document) error { return d.PostKeyEvent(KeyEventInput, 'a', 0) }},
+		{"PostMouseEvent", func(d *Document) error {
+			return d.PostMouseEvent(MouseButtonDown, 0, 0, 1, MouseLeft, 0)
+		}},
+		{"PostUnoCommand", func(d *Document) error { return d.PostUnoCommand(".uno:Bold", "", false) }},
+		{"Bold", func(d *Document) error { return d.Bold() }},
+		{"Italic", func(d *Document) error { return d.Italic() }},
+		{"Underline", func(d *Document) error { return d.Underline() }},
+		{"Undo", func(d *Document) error { return d.Undo() }},
+		{"Redo", func(d *Document) error { return d.Redo() }},
+		{"Copy", func(d *Document) error { return d.Copy() }},
+		{"Cut", func(d *Document) error { return d.Cut() }},
+		{"Paste", func(d *Document) error { return d.Paste() }},
+		{"SelectAll", func(d *Document) error { return d.SelectAll() }},
+		{"InsertPageBreak", func(d *Document) error { return d.InsertPageBreak() }},
+		{"InsertTable", func(d *Document) error { return d.InsertTable(1, 1) }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, doc := loadFakeDoc(t, &fakeBackend{})
+			doc.Close()
+			if err := tc.call(doc); !errors.Is(err, ErrClosed) {
+				t.Errorf("want ErrClosed, got %v", err)
+			}
+		})
+	}
+}
