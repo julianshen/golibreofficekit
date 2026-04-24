@@ -149,3 +149,68 @@ func (d *Document) GetSelectionTypeAndText(mimeType string) (kind SelectionKind,
 	}
 	return selectionKindFromLOK(k), t, m, nil
 }
+
+// SetTextSelection drags the selection handle of kind typ to the
+// document position (x, y) in twips.
+func (d *Document) SetTextSelection(typ SetTextSelectionType, x, y int64) error {
+	switch typ {
+	case SetTextSelectionStart, SetTextSelectionEnd, SetTextSelectionReset:
+		// valid
+	default:
+		return &LOKError{Op: "SetTextSelection", Detail: fmt.Sprintf("type out of range: %d", int(typ)), err: ErrInvalidOption}
+	}
+	if err := requireInt32XY("SetTextSelection", x, y); err != nil {
+		return err
+	}
+	unlock, err := d.guard()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	d.office.be.DocumentSetTextSelection(d.h, int(typ), int(x), int(y))
+	return nil
+}
+
+// ResetSelection clears the current selection.
+func (d *Document) ResetSelection() error {
+	unlock, err := d.guard()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	d.office.be.DocumentResetSelection(d.h)
+	return nil
+}
+
+// SetGraphicSelection drags a graphic-selection handle at (x, y)
+// twips. typ = Start begins the drag; typ = End completes it.
+func (d *Document) SetGraphicSelection(typ SetGraphicSelectionType, x, y int64) error {
+	switch typ {
+	case SetGraphicSelectionStart, SetGraphicSelectionEnd:
+		// valid
+	default:
+		return &LOKError{Op: "SetGraphicSelection", Detail: fmt.Sprintf("type out of range: %d", int(typ)), err: ErrInvalidOption}
+	}
+	if err := requireInt32XY("SetGraphicSelection", x, y); err != nil {
+		return err
+	}
+	unlock, err := d.guard()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	d.office.be.DocumentSetGraphicSelection(d.h, int(typ), int(x), int(y))
+	return nil
+}
+
+// SetBlockedCommandList blocks the comma-separated set of UNO
+// commands (csv) for the given view.
+func (d *Document) SetBlockedCommandList(viewID int, csv string) error {
+	unlock, err := d.guard()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	d.office.be.DocumentSetBlockedCommandList(d.h, viewID, csv)
+	return nil
+}

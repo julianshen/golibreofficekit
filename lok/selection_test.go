@@ -186,3 +186,138 @@ func TestGetSelectionTypeAndText_UnsupportedBubbles(t *testing.T) {
 		t.Errorf("want ErrUnsupported, got %v", err)
 	}
 }
+
+func TestSetTextSelection_ForwardsArgs(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	if err := doc.SetTextSelection(SetTextSelectionEnd, 1000, 2000); err != nil {
+		t.Fatal(err)
+	}
+	if fb.lastSetTextSelectionTyp != 1 || fb.lastSetTextSelectionX != 1000 || fb.lastSetTextSelectionY != 2000 {
+		t.Errorf("recorded (%d, %d, %d)", fb.lastSetTextSelectionTyp, fb.lastSetTextSelectionX, fb.lastSetTextSelectionY)
+	}
+}
+
+func TestSetTextSelection_InvalidType(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	if err := doc.SetTextSelection(SetTextSelectionType(99), 0, 0); !errors.Is(err, ErrInvalidOption) {
+		t.Errorf("want ErrInvalidOption, got %v", err)
+	}
+}
+
+func TestSetTextSelection_Closed(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	doc.Close()
+
+	if err := doc.SetTextSelection(SetTextSelectionStart, 0, 0); !errors.Is(err, ErrClosed) {
+		t.Errorf("want ErrClosed, got %v", err)
+	}
+}
+
+func TestResetSelection_Forwards(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	for i := 0; i < 3; i++ {
+		if err := doc.ResetSelection(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if fb.resetSelectionCalls != 3 {
+		t.Errorf("resetSelectionCalls=%d, want 3", fb.resetSelectionCalls)
+	}
+}
+
+func TestResetSelection_Closed(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	doc.Close()
+	if err := doc.ResetSelection(); !errors.Is(err, ErrClosed) {
+		t.Errorf("want ErrClosed, got %v", err)
+	}
+}
+
+func TestSetGraphicSelection_ForwardsArgs(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	if err := doc.SetGraphicSelection(SetGraphicSelectionEnd, 10, 20); err != nil {
+		t.Fatal(err)
+	}
+	if fb.lastSetGraphicTyp != 1 || fb.lastSetGraphicX != 10 || fb.lastSetGraphicY != 20 {
+		t.Errorf("recorded (%d, %d, %d)", fb.lastSetGraphicTyp, fb.lastSetGraphicX, fb.lastSetGraphicY)
+	}
+}
+
+func TestSetGraphicSelection_InvalidType(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	if err := doc.SetGraphicSelection(SetGraphicSelectionType(99), 0, 0); !errors.Is(err, ErrInvalidOption) {
+		t.Errorf("want ErrInvalidOption, got %v", err)
+	}
+}
+
+func TestSetGraphicSelection_Closed(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	doc.Close()
+	if err := doc.SetGraphicSelection(SetGraphicSelectionStart, 0, 0); !errors.Is(err, ErrClosed) {
+		t.Errorf("want ErrClosed, got %v", err)
+	}
+}
+
+func TestSetBlockedCommandList_ForwardsArgs(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	if err := doc.SetBlockedCommandList(2, ".uno:Save,.uno:SaveAs"); err != nil {
+		t.Fatal(err)
+	}
+	if fb.lastBlockedViewID != 2 || fb.lastBlockedCSV != ".uno:Save,.uno:SaveAs" {
+		t.Errorf("recorded (%d, %q)", fb.lastBlockedViewID, fb.lastBlockedCSV)
+	}
+}
+
+func TestSetBlockedCommandList_Closed(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	doc.Close()
+	if err := doc.SetBlockedCommandList(0, ""); !errors.Is(err, ErrClosed) {
+		t.Errorf("want ErrClosed, got %v", err)
+	}
+}

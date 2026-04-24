@@ -562,20 +562,27 @@ func (f *fakeBackend) DocumentPostUnoCommand(_ documentHandle, cmd, args string,
 	f.lastUnoNotify = notify
 }
 
-// --- Selection stubs (Phase 8 Task 7) — replaced with real fake
-// implementations in Task 10. ---
+// --- Selection setters (Phase 8 Task 11) — real fake implementations. ---
 
-func (f *fakeBackend) DocumentSetTextSelection(documentHandle, int, int, int) {
-	panic("fakeBackend.DocumentSetTextSelection not implemented — added in Phase 8 Task 10")
+func (f *fakeBackend) DocumentSetTextSelection(_ documentHandle, typ, x, y int) {
+	f.lastSetTextSelectionTyp = typ
+	f.lastSetTextSelectionX = x
+	f.lastSetTextSelectionY = y
 }
+
 func (f *fakeBackend) DocumentResetSelection(documentHandle) {
-	panic("fakeBackend.DocumentResetSelection not implemented — added in Phase 8 Task 10")
+	f.resetSelectionCalls++
 }
-func (f *fakeBackend) DocumentSetGraphicSelection(documentHandle, int, int, int) {
-	panic("fakeBackend.DocumentSetGraphicSelection not implemented — added in Phase 8 Task 10")
+
+func (f *fakeBackend) DocumentSetGraphicSelection(_ documentHandle, typ, x, y int) {
+	f.lastSetGraphicTyp = typ
+	f.lastSetGraphicX = x
+	f.lastSetGraphicY = y
 }
-func (f *fakeBackend) DocumentSetBlockedCommandList(documentHandle, int, string) {
-	panic("fakeBackend.DocumentSetBlockedCommandList not implemented — added in Phase 8 Task 10")
+
+func (f *fakeBackend) DocumentSetBlockedCommandList(_ documentHandle, viewID int, csv string) {
+	f.lastBlockedViewID = viewID
+	f.lastBlockedCSV = csv
 }
 func (f *fakeBackend) DocumentGetTextSelection(_ documentHandle, mime string) (string, string) {
 	f.lastGetSelectionMime = mime
