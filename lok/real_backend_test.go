@@ -282,3 +282,60 @@ func TestRealBackend_InputForwarding(t *testing.T) {
 	rb.DocumentPostMouseEvent(rdoc, 0, 100, 100, 1, 1, 0)
 	rb.DocumentPostUnoCommand(rdoc, ".uno:Bold", "", false)
 }
+
+func TestRealBackend_SelectionForwarding(t *testing.T) {
+	rb := realBackend{}
+	fakeDocHandle := lokc.NewFakeDocumentHandle()
+	defer lokc.FreeFakeDocumentHandle(fakeDocHandle)
+	rdoc := realDocumentHandle{d: fakeDocHandle}
+
+	rb.DocumentSetTextSelection(rdoc, int(SetTextSelectionStart), 10, 20)
+	rb.DocumentSetGraphicSelection(rdoc, int(SetGraphicSelectionEnd), 10, 20)
+	rb.DocumentSetBlockedCommandList(rdoc, 0, ".uno:Save")
+	rb.DocumentResetSelection(rdoc)
+
+	// getters on a NULL-pClass handle return empty / -1 / Unsupported.
+	if text, mime := rb.DocumentGetTextSelection(rdoc, "text/plain"); text != "" || mime != "" {
+		t.Errorf("GetTextSelection on NULL pClass: got (%q, %q), want empty", text, mime)
+	}
+	if k := rb.DocumentGetSelectionType(rdoc); k != -1 {
+		t.Errorf("GetSelectionType on NULL pClass: got %d, want -1", k)
+	}
+	kind, _, _, err := rb.DocumentGetSelectionTypeAndText(rdoc, "text/plain")
+	if !errors.Is(err, ErrUnsupported) {
+		t.Errorf("GetSelectionTypeAndText: err=%v, want ErrUnsupported", err)
+	}
+	if kind != -1 {
+		t.Errorf("GetSelectionTypeAndText kind=%d on NULL pClass, want -1", kind)
+	}
+}
+
+func TestRealBackend_ClipboardForwarding(t *testing.T) {
+	rb := realBackend{}
+	fakeDocHandle := lokc.NewFakeDocumentHandle()
+	defer lokc.FreeFakeDocumentHandle(fakeDocHandle)
+	rdoc := realDocumentHandle{d: fakeDocHandle}
+
+	items, err := rb.DocumentGetClipboard(rdoc, nil)
+	if !errors.Is(err, ErrUnsupported) {
+		t.Errorf("GetClipboard on NULL pClass: err=%v, want ErrUnsupported", err)
+	}
+	if items != nil {
+		t.Errorf("GetClipboard on NULL pClass: items=%v, want nil", items)
+	}
+
+	// Request-list path also exercises the CString allocation loop.
+	_, err = rb.DocumentGetClipboard(rdoc, []string{"text/plain", "text/html"})
+	if !errors.Is(err, ErrUnsupported) {
+		t.Errorf("GetClipboard([list]): err=%v, want ErrUnsupported", err)
+	}
+
+	if err := rb.DocumentSetClipboard(rdoc, nil); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("SetClipboard(nil): err=%v, want ErrUnsupported", err)
+	}
+	// Non-empty items path exercises the CBytes + CString allocation loop.
+	in := []clipboardItemInternal{{MimeType: "text/plain", Data: []byte("hi")}}
+	if err := rb.DocumentSetClipboard(rdoc, in); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("SetClipboard([items]): err=%v, want ErrUnsupported", err)
+	}
+}
