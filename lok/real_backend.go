@@ -207,6 +207,16 @@ func (realBackend) DocumentRenderShapeSelection(d documentHandle) []byte {
 	return lokc.DocumentRenderShapeSelection(mustDoc(d).d)
 }
 
+func (realBackend) DocumentPostKeyEvent(d documentHandle, typ, charCode, keyCode int) {
+	lokc.DocumentPostKeyEvent(mustDoc(d).d, typ, charCode, keyCode)
+}
+func (realBackend) DocumentPostMouseEvent(d documentHandle, typ, x, y, count, buttons, mods int) {
+	lokc.DocumentPostMouseEvent(mustDoc(d).d, typ, x, y, count, buttons, mods)
+}
+func (realBackend) DocumentPostUnoCommand(d documentHandle, cmd, args string, notifyWhenFinished bool) {
+	lokc.DocumentPostUnoCommand(mustDoc(d).d, cmd, args, notifyWhenFinished)
+}
+
 func init() {
 	setBackend(realBackend{})
 }

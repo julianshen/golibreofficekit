@@ -87,6 +87,20 @@ type fakeBackend struct {
 	searchResultOK  bool
 	lastSearchQuery string
 	shapeSelection  []byte
+
+	// Input state.
+	lastKeyType     int
+	lastCharCode    int
+	lastKeyCode     int
+	lastMouseType   int
+	lastMouseX      int
+	lastMouseY      int
+	lastMouseCount  int
+	lastMouseButton int
+	lastMouseMods   int
+	lastUnoCmd      string
+	lastUnoArgs     string
+	lastUnoNotify   bool
 }
 
 const fakeViewIDBase = 1000
@@ -510,4 +524,23 @@ func (f *fakeBackend) DocumentRenderSearchResult(_ documentHandle, q string) ([]
 }
 func (f *fakeBackend) DocumentRenderShapeSelection(documentHandle) []byte {
 	return f.shapeSelection
+}
+
+func (f *fakeBackend) DocumentPostKeyEvent(_ documentHandle, typ, charCode, keyCode int) {
+	f.lastKeyType = typ
+	f.lastCharCode = charCode
+	f.lastKeyCode = keyCode
+}
+func (f *fakeBackend) DocumentPostMouseEvent(_ documentHandle, typ, x, y, count, buttons, mods int) {
+	f.lastMouseType = typ
+	f.lastMouseX = x
+	f.lastMouseY = y
+	f.lastMouseCount = count
+	f.lastMouseButton = buttons
+	f.lastMouseMods = mods
+}
+func (f *fakeBackend) DocumentPostUnoCommand(_ documentHandle, cmd, args string, notify bool) {
+	f.lastUnoCmd = cmd
+	f.lastUnoArgs = args
+	f.lastUnoNotify = notify
 }

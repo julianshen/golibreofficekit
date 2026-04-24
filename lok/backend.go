@@ -53,6 +53,10 @@ type backend interface {
 	DocumentPaintPartTile(d documentHandle, buf []byte, part, mode, pxW, pxH, x, y, w, h int)
 	DocumentRenderSearchResult(d documentHandle, query string) (buf []byte, pxW, pxH int, ok bool)
 	DocumentRenderShapeSelection(d documentHandle) []byte
+
+	DocumentPostKeyEvent(d documentHandle, typ, charCode, keyCode int)
+	DocumentPostMouseEvent(d documentHandle, typ, x, y, count, buttons, mods int)
+	DocumentPostUnoCommand(d documentHandle, cmd, args string, notifyWhenFinished bool)
 }
 
 // libraryHandle and officeHandle are opaque across the boundary.

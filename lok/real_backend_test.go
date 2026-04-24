@@ -271,3 +271,14 @@ func TestRealBackend_RenderForwarding(t *testing.T) {
 		t.Errorf("RenderShapeSelection: got %v, want nil", got)
 	}
 }
+
+func TestRealBackend_InputForwarding(t *testing.T) {
+	rb := realBackend{}
+	fakeDocHandle := lokc.NewFakeDocumentHandle()
+	defer lokc.FreeFakeDocumentHandle(fakeDocHandle)
+	rdoc := realDocumentHandle{d: fakeDocHandle}
+
+	rb.DocumentPostKeyEvent(rdoc, 0, 'a', 0)
+	rb.DocumentPostMouseEvent(rdoc, 0, 100, 100, 1, 1, 0)
+	rb.DocumentPostUnoCommand(rdoc, ".uno:Bold", "", false)
+}
