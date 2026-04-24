@@ -2,7 +2,11 @@
 
 package lok
 
-import "testing"
+import (
+	"errors"
+	"math"
+	"testing"
+)
 
 func TestTypedHelpers_DispatchExpectedCommand(t *testing.T) {
 	cases := []struct {
@@ -36,6 +40,35 @@ func TestTypedHelpers_DispatchExpectedCommand(t *testing.T) {
 			}
 			if fb.lastUnoNotify {
 				t.Error("notify=true, want false")
+			}
+		})
+	}
+}
+
+func TestInsertTable_Rejects(t *testing.T) {
+	cases := []struct {
+		name       string
+		rows, cols int
+	}{
+		{"zero rows", 0, 1},
+		{"zero cols", 1, 0},
+		{"negative rows", -1, 1},
+		{"negative cols", 1, -1},
+		{"rows over int32", math.MaxInt32 + 1, 1},
+		{"cols over int32", 1, math.MaxInt32 + 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fb := &fakeBackend{}
+			_, doc := loadFakeDoc(t, fb)
+			err := doc.InsertTable(tc.rows, tc.cols)
+			var lokErr *LOKError
+			if !errors.As(err, &lokErr) || lokErr.Op != "InsertTable" {
+				t.Errorf("want *LOKError{Op: InsertTable}, got %T %v", err, err)
+			}
+			if fb.lastUnoCmd != "" {
+				t.Errorf("backend was invoked (cmd=%q); expected pre-flight rejection",
+					fb.lastUnoCmd)
 			}
 		})
 	}

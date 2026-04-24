@@ -2,7 +2,10 @@
 
 package lok
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 // Bold toggles bold on the current selection. Equivalent to
 // PostUnoCommand(".uno:Bold", "", false).
@@ -38,8 +41,16 @@ func (d *Document) InsertPageBreak() error {
 }
 
 // InsertTable inserts a table with the given row and column counts
-// at the caret. Builds LOK's awt::Any JSON args internally.
+// at the caret. Builds LOK's awt::Any JSON args internally. rows
+// and cols must be in [1, math.MaxInt32] — UNO's "long" type is
+// 32-bit, so values outside that range cannot be represented and
+// zero/negative dimensions produce no table.
 func (d *Document) InsertTable(rows, cols int) error {
+	if rows < 1 || cols < 1 || rows > math.MaxInt32 || cols > math.MaxInt32 {
+		return &LOKError{Op: "InsertTable",
+			Detail: fmt.Sprintf("rows and cols must be in [1, %d]: rows=%d cols=%d",
+				math.MaxInt32, rows, cols)}
+	}
 	args := fmt.Sprintf(`{"Columns":{"type":"long","value":%d},"Rows":{"type":"long","value":%d}}`, cols, rows)
 	return d.PostUnoCommand(".uno:InsertTable", args, false)
 }
