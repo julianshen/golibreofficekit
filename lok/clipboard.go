@@ -11,6 +11,28 @@ type ClipboardItem struct {
 	Data     []byte
 }
 
+// SetClipboard writes items to the per-view clipboard, replacing
+// the current contents. Each item's MimeType must pass
+// validateMime. An empty or nil items slice is accepted (forwarded
+// as zero count).
+func (d *Document) SetClipboard(items []ClipboardItem) error {
+	for _, it := range items {
+		if err := validateMime(it.MimeType); err != nil {
+			return err
+		}
+	}
+	unlock, err := d.guard()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	inner := make([]clipboardItemInternal, len(items))
+	for i, it := range items {
+		inner[i] = clipboardItemInternal{MimeType: it.MimeType, Data: it.Data}
+	}
+	return d.office.be.DocumentSetClipboard(d.h, inner)
+}
+
 // GetClipboard reads the per-view clipboard. A nil (or empty)
 // mimeTypes slice asks LOK for every MIME type it offers natively;
 // a populated slice requests those specific types, returning one

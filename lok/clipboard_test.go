@@ -117,3 +117,109 @@ func TestGetClipboard_BackendErrorSurfaces(t *testing.T) {
 		t.Errorf("want ErrUnsupported, got %v", err)
 	}
 }
+
+func TestSetClipboard_Forwards(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	items := []ClipboardItem{{MimeType: "text/plain", Data: []byte("hi")}}
+	if err := doc.SetClipboard(items); err != nil {
+		t.Fatal(err)
+	}
+	if len(fb.lastSetClipboardItems) != 1 ||
+		fb.lastSetClipboardItems[0].MimeType != "text/plain" ||
+		string(fb.lastSetClipboardItems[0].Data) != "hi" {
+		t.Errorf("recorded %+v", fb.lastSetClipboardItems)
+	}
+}
+
+func TestSetClipboard_EmptySliceAllowed(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	if err := doc.SetClipboard(nil); err != nil {
+		t.Fatalf("nil items: %v", err)
+	}
+	if err := doc.SetClipboard([]ClipboardItem{}); err != nil {
+		t.Fatalf("empty items: %v", err)
+	}
+}
+
+func TestSetClipboard_InvalidMime(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	items := []ClipboardItem{{MimeType: "", Data: []byte("x")}}
+	if err := doc.SetClipboard(items); !errors.Is(err, ErrInvalidOption) {
+		t.Errorf("want ErrInvalidOption, got %v", err)
+	}
+}
+
+func TestSetClipboard_Closed(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	doc.Close()
+	if err := doc.SetClipboard(nil); !errors.Is(err, ErrClosed) {
+		t.Errorf("want ErrClosed, got %v", err)
+	}
+}
+
+func TestSetClipboard_BackendErrorSurfaces(t *testing.T) {
+	fb := &fakeBackend{setClipboardErr: ErrUnsupported}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+	items := []ClipboardItem{{MimeType: "text/plain", Data: []byte("hi")}}
+	if err := doc.SetClipboard(items); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("want ErrUnsupported, got %v", err)
+	}
+}
+
+func TestClipboard_RoundTripThroughFake(t *testing.T) {
+	// Go: SetClipboard, have the fake stash what it saw, arrange for
+	// GetClipboard to return that, and verify deep-equality.
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	in := []ClipboardItem{
+		{MimeType: "text/plain;charset=utf-8", Data: []byte("alpha")},
+		{MimeType: "text/html", Data: []byte("<b>alpha</b>")},
+	}
+	if err := doc.SetClipboard(in); err != nil {
+		t.Fatal(err)
+	}
+	// Round-trip: rehearse what the real backend would do.
+	fb.getClipboardResult = fb.lastSetClipboardItems
+
+	out, err := doc.GetClipboard(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != len(in) {
+		t.Fatalf("len out=%d in=%d", len(out), len(in))
+	}
+	for i := range in {
+		if out[i].MimeType != in[i].MimeType || string(out[i].Data) != string(in[i].Data) {
+			t.Errorf("item %d: got %+v, want %+v", i, out[i], in[i])
+		}
+	}
+}
