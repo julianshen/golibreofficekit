@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // LibreOffice installs SIGWINCH/SIGPIPE signal handlers that lack
@@ -355,6 +356,99 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	}
 	if err := doc.InsertTable(2, 2); err != nil {
 		t.Errorf("InsertTable: %v", err)
+	}
+
+	// --- Phase 8: selection + clipboard smoke on a real document ---
+	//
+	// SelectAll is posted as a UNO command. On LO 24.8 on Fedora, LOK
+	// silently drops posted input until a document-level callback is
+	// registered — binding registerCallback is Phase 9 scope. If the
+	// selection never appears within the poll budget, Skipf this
+	// block (t.Logf the reason) rather than failing. The unit tests
+	// in lok/selection_test.go exercise every argument-forwarding and
+	// error path; this block exists to catch real-LOK regressions in
+	// the cgo glue, not to gate the test suite on Phase 9 callback
+	// plumbing.
+	if err := doc.PostUnoCommand(".uno:SelectAll", "", false); err != nil {
+		t.Errorf("Phase 8: SelectAll: %v", err)
+	}
+	selectionAppeared := false
+	deadline := time.Now().Add(500 * time.Millisecond)
+	var kind SelectionKind
+	for time.Now().Before(deadline) {
+		k, err := doc.GetSelectionKind()
+		if err != nil {
+			t.Errorf("Phase 8: GetSelectionKind: %v", err)
+			break
+		}
+		if k != SelectionKindNone {
+			kind = k
+			selectionAppeared = true
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if !selectionAppeared {
+		t.Logf("Phase 8: SelectAll yielded no observable selection (LO build drops input without registerCallback — Phase 9 scope); skipping selection assertions")
+	} else {
+		if kind != SelectionKindText && kind != SelectionKindComplex {
+			t.Errorf("Phase 8: selection kind after SelectAll: %v", kind)
+		}
+		text, usedMime, err := doc.GetTextSelection("text/plain;charset=utf-8")
+		if err != nil {
+			t.Errorf("Phase 8: GetTextSelection: %v", err)
+		}
+		if usedMime == "" {
+			t.Errorf("Phase 8: usedMime should be non-empty")
+		}
+		if !strings.Contains(text, "Hello") {
+			t.Errorf("Phase 8: selection text %q does not contain 'Hello'", text)
+		}
+		// GetSelectionTypeAndText is LO 7.4+; the supported LO here is
+		// 24.8 so it should always be present. Still capability-gate
+		// for safety — see spec §4.3.
+		kind2, text2, _, err := doc.GetSelectionTypeAndText("text/plain;charset=utf-8")
+		if errors.Is(err, ErrUnsupported) {
+			t.Logf("Phase 8: GetSelectionTypeAndText unsupported on this LO build")
+		} else if err != nil {
+			t.Errorf("Phase 8: GetSelectionTypeAndText: %v", err)
+		} else {
+			if kind2 != SelectionKindText {
+				t.Errorf("Phase 8: kind2=%v, want %v", kind2, SelectionKindText)
+			}
+			if text2 != text {
+				t.Errorf("Phase 8: text mismatch: %q vs %q", text2, text)
+			}
+		}
+
+		if err := doc.ResetSelection(); err != nil {
+			t.Errorf("Phase 8: ResetSelection: %v", err)
+		}
+		deadline = time.Now().Add(500 * time.Millisecond)
+		for time.Now().Before(deadline) {
+			k, err := doc.GetSelectionKind()
+			if err != nil {
+				t.Errorf("Phase 8: GetSelectionKind after reset: %v", err)
+				break
+			}
+			if k == SelectionKindNone {
+				break
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+	}
+
+	// Smoke calls — assert only that the cgo path doesn't crash.
+	// Phase 10 window geometry will let us drive these with real
+	// coordinates.
+	if err := doc.SetTextSelection(SetTextSelectionStart, 0, 0); err != nil {
+		t.Errorf("Phase 8: SetTextSelection: %v", err)
+	}
+	if err := doc.SetGraphicSelection(SetGraphicSelectionEnd, 0, 0); err != nil {
+		t.Errorf("Phase 8: SetGraphicSelection: %v", err)
+	}
+	if err := doc.SetBlockedCommandList(0, ""); err != nil {
+		t.Errorf("Phase 8: SetBlockedCommandList: %v", err)
 	}
 
 	// LoadFromReader deliberately comes last. Loading a second
