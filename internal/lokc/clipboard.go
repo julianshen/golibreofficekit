@@ -47,6 +47,16 @@ static void go_doc_free_clipboard(size_t count, char** mimes, size_t* sizes, cha
 static char*  go_doc_clipboard_mime(char** mimes, size_t i)     { return mimes[i]; }
 static size_t go_doc_clipboard_size(size_t* sizes, size_t i)    { return sizes[i]; }
 static char*  go_doc_clipboard_stream(char** streams, size_t i) { return streams[i]; }
+
+static int go_doc_set_clipboard(LibreOfficeKitDocument* d,
+                                size_t count,
+                                const char** mimes,
+                                const size_t* sizes,
+                                const char** streams) {
+    if (d == NULL || d->pClass == NULL || d->pClass->setClipboard == NULL) return -1;
+    int ok = d->pClass->setClipboard(d, count, mimes, sizes, streams);
+    return ok ? 1 : 0;
+}
 */
 import "C"
 
@@ -113,4 +123,64 @@ func DocumentGetClipboard(d DocumentHandle, mimeTypes []string) ([]ClipboardItem
 		}
 	}
 	return items, nil
+}
+
+// DocumentSetClipboard invokes pClass->setClipboard. An empty items
+// slice is forwarded as count=0 (LOK accepts this; the platform
+// convention is that callers who want to clear the clipboard use
+// ResetSelection or the .uno:Clear command). Returns ErrUnsupported
+// when the vtable slot is NULL.
+func DocumentSetClipboard(d DocumentHandle, items []ClipboardItem) error {
+	if !d.IsValid() {
+		return ErrUnsupported
+	}
+
+	n := len(items)
+	var (
+		mimesPtr   unsafe.Pointer
+		sizesPtr   unsafe.Pointer
+		streamsPtr unsafe.Pointer
+		cMimes     **C.char
+		cSizes     *C.size_t
+		cStreams    **C.char
+	)
+	if n > 0 {
+		mimesPtr = C.malloc(C.size_t(n) * C.size_t(unsafe.Sizeof(uintptr(0))))
+		sizesPtr = C.malloc(C.size_t(n) * C.size_t(unsafe.Sizeof(C.size_t(0))))
+		streamsPtr = C.malloc(C.size_t(n) * C.size_t(unsafe.Sizeof(uintptr(0))))
+		defer C.free(mimesPtr)
+		defer C.free(sizesPtr)
+		defer C.free(streamsPtr)
+		cMimes = (**C.char)(mimesPtr)
+		cSizes = (*C.size_t)(sizesPtr)
+		cStreams = (**C.char)(streamsPtr)
+
+		mimesSlice := (*[1 << 20]*C.char)(mimesPtr)[:n:n]
+		sizesSlice := (*[1 << 20]C.size_t)(sizesPtr)[:n:n]
+		streamsSlice := (*[1 << 20]*C.char)(streamsPtr)[:n:n]
+
+		for i, it := range items {
+			mimesSlice[i] = C.CString(it.MimeType)
+			defer C.free(unsafe.Pointer(mimesSlice[i]))
+			sizesSlice[i] = C.size_t(len(it.Data))
+			if len(it.Data) == 0 {
+				streamsSlice[i] = nil
+			} else {
+				streamsSlice[i] = (*C.char)(C.CBytes(it.Data))
+				defer C.free(unsafe.Pointer(streamsSlice[i]))
+			}
+		}
+	}
+
+	ok := C.go_doc_set_clipboard(d.p, C.size_t(n),
+		(**C.char)(unsafe.Pointer(cMimes)),
+		cSizes,
+		(**C.char)(unsafe.Pointer(cStreams)))
+	switch ok {
+	case -1:
+		return ErrUnsupported
+	case 0:
+		return errors.New("lokc: setClipboard returned failure")
+	}
+	return nil
 }
