@@ -4,6 +4,7 @@ package lok
 
 import (
 	"errors"
+	"math"
 	"testing"
 )
 
@@ -292,6 +293,60 @@ func TestSetGraphicSelection_Closed(t *testing.T) {
 	doc.Close()
 	if err := doc.SetGraphicSelection(SetGraphicSelectionStart, 0, 0); !errors.Is(err, ErrClosed) {
 		t.Errorf("want ErrClosed, got %v", err)
+	}
+}
+
+func TestSetTextSelection_XYRangeRejection(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	cases := []struct {
+		name string
+		x, y int64
+	}{
+		{"x-over", math.MaxInt32 + 1, 0},
+		{"x-under", math.MinInt32 - 1, 0},
+		{"y-over", 0, math.MaxInt32 + 1},
+		{"y-under", 0, math.MinInt32 - 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := doc.SetTextSelection(SetTextSelectionStart, tc.x, tc.y)
+			var lokErr *LOKError
+			if !errors.As(err, &lokErr) || lokErr.Op != "SetTextSelection" {
+				t.Errorf("want *LOKError Op=SetTextSelection, got %T %v", err, err)
+			}
+		})
+	}
+}
+
+func TestSetGraphicSelection_XYRangeRejection(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	cases := []struct {
+		name string
+		x, y int64
+	}{
+		{"x-over", math.MaxInt32 + 1, 0},
+		{"x-under", math.MinInt32 - 1, 0},
+		{"y-over", 0, math.MaxInt32 + 1},
+		{"y-under", 0, math.MinInt32 - 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := doc.SetGraphicSelection(SetGraphicSelectionStart, tc.x, tc.y)
+			var lokErr *LOKError
+			if !errors.As(err, &lokErr) || lokErr.Op != "SetGraphicSelection" {
+				t.Errorf("want *LOKError Op=SetGraphicSelection, got %T %v", err, err)
+			}
+		})
 	}
 }
 

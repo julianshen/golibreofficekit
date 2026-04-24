@@ -2,7 +2,11 @@
 
 package lok
 
-import "github.com/julianshen/golibreofficekit/internal/lokc"
+import (
+	"errors"
+
+	"github.com/julianshen/golibreofficekit/internal/lokc"
+)
 
 // realBackend wires into internal/lokc. It holds no state; the package
 // uses a single instance (set by New) so tests can replace it via
@@ -237,7 +241,7 @@ func (realBackend) DocumentGetSelectionType(d documentHandle) int {
 }
 func (realBackend) DocumentGetSelectionTypeAndText(d documentHandle, mimeType string) (int, string, string, error) {
 	kind, text, mime, err := lokc.DocumentGetSelectionTypeAndText(mustDoc(d).d, mimeType)
-	if err == lokc.ErrUnsupported {
+	if errors.Is(err, lokc.ErrUnsupported) {
 		return -1, "", "", ErrUnsupported
 	}
 	return kind, text, mime, err
@@ -245,7 +249,7 @@ func (realBackend) DocumentGetSelectionTypeAndText(d documentHandle, mimeType st
 
 func (realBackend) DocumentGetClipboard(d documentHandle, mimeTypes []string) ([]clipboardItemInternal, error) {
 	items, err := lokc.DocumentGetClipboard(mustDoc(d).d, mimeTypes)
-	if err == lokc.ErrUnsupported {
+	if errors.Is(err, lokc.ErrUnsupported) {
 		return nil, ErrUnsupported
 	}
 	if err != nil {
@@ -264,7 +268,7 @@ func (realBackend) DocumentSetClipboard(d documentHandle, items []clipboardItemI
 		lokItems[i] = lokc.ClipboardItem{MimeType: it.MimeType, Data: it.Data}
 	}
 	err := lokc.DocumentSetClipboard(mustDoc(d).d, lokItems)
-	if err == lokc.ErrUnsupported {
+	if errors.Is(err, lokc.ErrUnsupported) {
 		return ErrUnsupported
 	}
 	return err
