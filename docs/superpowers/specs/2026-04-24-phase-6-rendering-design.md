@@ -73,6 +73,10 @@ the binding cannot guess.
 
 `SetClientZoom` and `SetClientVisibleArea` are optional hints that LOK
 uses for tile caching. Skipping them is legal; paint still works.
+They do NOT require prior `InitializeForRendering` — callers may invoke
+them in any order relative to `InitializeForRendering`. Only the paint
+and render methods (`PaintTile*`, `PaintPartTile*`, `RenderSearchResult*`,
+`RenderShapeSelection`) enforce the initialized precondition.
 
 ## 5. API surface (public `lok` package)
 
@@ -208,16 +212,31 @@ DocumentInitializeForRendering(d documentHandle, args string)
 DocumentGetTileMode(d documentHandle) int
 DocumentSetClientZoom(d documentHandle, tilePxW, tilePxH, tileTwipW, tileTwipH int)
 DocumentSetClientVisibleArea(d documentHandle, x, y, w, h int)
-DocumentPaintTile(d documentHandle, buf []byte, pxW, pxH int, x, y, w, h int64)
-DocumentPaintPartTile(d documentHandle, buf []byte, part, mode, pxW, pxH int, x, y, w, h int64)
+DocumentPaintTile(d documentHandle, buf []byte, pxW, pxH int, x, y, w, h int)
+DocumentPaintPartTile(d documentHandle, buf []byte, part, mode, pxW, pxH int, x, y, w, h int)
 DocumentRenderSearchResult(d documentHandle, query string) (buf []byte, pxW, pxH int, ok bool)
 DocumentRenderShapeSelection(d documentHandle) []byte
 ```
 
+Coordinate-type note: LOK's `paintTile` / `paintPartTile` / `setClientVisibleArea`
+declare tile positions and sizes as C `const int` (32-bit on LP64 Linux and
+macOS, the only platforms we target). The seam therefore takes Go `int` — not
+`int64` — for all four of those methods, even though the public `TwipRect`
+uses `int64`. The public `PaintTile*` methods convert `TwipRect.X/Y/W/H` to
+`int` at the seam boundary and return `*LOKError` if any field exceeds
+`math.MaxInt32` (twips beyond ~2.1×10⁹ represent documents larger than 370
+million inches — outside any realistic LO document, but we refuse cleanly
+rather than truncate silently).
+
 The two `Render*` methods copy LOK's allocated buffer into a fresh Go
-slice and `free` the C pointer before returning, using the existing
-`copyAndFree` helper for char* or a new `copyAndFreeBytes` for the
-sized `unsigned char*` case. `DocumentRenderSearchResult` returns
+slice and `free` the C pointer before returning. For `renderShapeSelection`
+(char* plus explicit size_t length) and `renderSearchResult` (unsigned char*
+plus int width/height plus size_t byte length), a new helper
+`copyAndFreeBytes(p unsafe.Pointer, n C.size_t) []byte` lives next to the
+existing `copyAndFree` in `internal/lokc/errstr.go` (or a sibling
+`internal/lokc/bytes.go` if `errstr.go` grows unwieldy). The helper
+`C.GoBytes`-copies the region, `C.free`s the C pointer, and returns the Go
+slice. It is covered by the existing `internal/lokc` coverage gate. `DocumentRenderSearchResult` returns
 `ok=false` when LOK returns false (no match) — the Go wrapper maps this
 to `(nil, 0, 0, nil)` and does not call `OfficeGetError`.
 
@@ -261,6 +280,8 @@ functions return `(nil, ...)`.
   `*LOKError`, tile-mode=2 returns `*LOKError`.
 - `PaintTileRaw`: buffer exactly right (happy), too small (error), too
   large (error — exact match required, not "at least").
+- `PaintTileRaw` with a `TwipRect` whose `X` (or `Y`, `W`, `H`) exceeds
+  `math.MaxInt32` returns `*LOKError` without calling the backend.
 - `PaintTile` / `PaintPartTile`: fake writes a known premul pattern into
   the buffer; assert NRGBA output matches the expected unpremul pattern.
 - `RenderSearchResultRaw`: ok=false → (nil, 0, 0, nil); ok=true → buf
