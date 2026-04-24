@@ -115,21 +115,24 @@ const (
 func (m Modifier) Has(other Modifier) bool
 func (m Modifier) String() string
 
-// Named key-code constants (a curated subset of awt::Key).
+// Named key-code constants. A curated subset of
+// com::sun::star::awt::Key (IDL: offapi/com/sun/star/awt/Key.idl).
+// KeyCodeEnter maps to awt::Key::RETURN. Callers needing keys
+// outside this set pass the raw awt::Key int directly.
 const (
-    KeyCodeEnter     = 1280
-    KeyCodeEsc       = 1281
-    KeyCodeTab       = 1282
-    KeyCodeBackspace = 1283
-    KeyCodeDelete    = 1286
-    KeyCodeUp        = 1024
-    KeyCodeDown      = 1025
-    KeyCodeLeft      = 1026
-    KeyCodeRight     = 1027
-    KeyCodeHome      = 1028
-    KeyCodeEnd       = 1029
-    KeyCodePageUp    = 1030
-    KeyCodePageDown  = 1031
+    KeyCodeEnter     = 1280 // awt::Key::RETURN
+    KeyCodeEsc       = 1281 // awt::Key::ESCAPE
+    KeyCodeTab       = 1282 // awt::Key::TAB
+    KeyCodeBackspace = 1283 // awt::Key::BACKSPACE
+    KeyCodeDelete    = 1286 // awt::Key::DELETE
+    KeyCodeUp        = 1024 // awt::Key::UP
+    KeyCodeDown      = 1025 // awt::Key::DOWN
+    KeyCodeLeft      = 1026 // awt::Key::LEFT
+    KeyCodeRight     = 1027 // awt::Key::RIGHT
+    KeyCodeHome      = 1028 // awt::Key::HOME
+    KeyCodeEnd       = 1029 // awt::Key::END
+    KeyCodePageUp    = 1030 // awt::Key::PAGEUP
+    KeyCodePageDown  = 1031 // awt::Key::PAGEDOWN
 )
 
 // PostKeyEvent posts a keyboard event to the currently active view.
@@ -141,8 +144,9 @@ const (
 func (*Document) PostKeyEvent(typ KeyEventType, charCode, keyCode int) error
 
 // PostMouseEvent posts a mouse event at twip coordinates (x, y).
-// count is the click count (1 for single, 2 for double, etc.); use
-// 0 for MouseMove. buttons and mods are OR-ed bitsets. x and y are
+// count is the click count (1 for single, 2 for double, etc.).
+// For MouseMove, callers typically pass 0 but LOK accepts any value.
+// buttons and mods are OR-ed bitsets. x and y are
 // int64 for parity with TwipRect; values outside int32 return
 // *LOKError{Op:"PostMouseEvent"} without invoking LOK.
 func (*Document) PostMouseEvent(typ MouseEventType, x, y int64, count int, buttons MouseButton, mods Modifier) error
