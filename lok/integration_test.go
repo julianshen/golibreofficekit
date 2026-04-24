@@ -315,6 +315,48 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 		t.Logf("RenderShapeSelection returned %d bytes without a selection (LO may emit empty SVG envelope)", len(shape))
 	}
 
+	// Input round-trip on doc — "doesn't crash" only.
+	//
+	// LO 24.8.7.2 silently drops postKeyEvent / postUnoCommand until
+	// a doc-level registerCallback is hooked up (Phase 9 scope).
+	// Discovered 2026-04-24 via pure-C reproducer that exhibits the
+	// same symptom. The save-and-inspect assertion is deferred to
+	// Phase 9; this block just verifies the cgo path doesn't crash.
+
+	// Mouse click pair — cursor routing does work even without a
+	// callback, so this exercises that end of the path.
+	if err := doc.PostMouseEvent(MouseButtonDown, 720, 720, 1, MouseLeft, 0); err != nil {
+		t.Errorf("PostMouseEvent down: %v", err)
+	}
+	if err := doc.PostMouseEvent(MouseButtonUp, 720, 720, 1, MouseLeft, 0); err != nil {
+		t.Errorf("PostMouseEvent up: %v", err)
+	}
+
+	// PostKeyEvent: LO drops it on this LOK build without a callback,
+	// but the cgo path runs. Paired input/up to match LOK's contract.
+	if err := doc.PostKeyEvent(KeyEventInput, 'X', 0); err != nil {
+		t.Errorf("PostKeyEvent input: %v", err)
+	}
+	if err := doc.PostKeyEvent(KeyEventUp, 'X', 0); err != nil {
+		t.Errorf("PostKeyEvent up: %v", err)
+	}
+
+	// PostUnoCommand: bare dispatch.
+	if err := doc.PostUnoCommand(".uno:Deselect", "", false); err != nil {
+		t.Errorf("PostUnoCommand .uno:Deselect: %v", err)
+	}
+
+	// Typed helpers: exercise Bold/SelectAll + InsertTable JSON path.
+	if err := doc.SelectAll(); err != nil {
+		t.Errorf("SelectAll: %v", err)
+	}
+	if err := doc.Bold(); err != nil {
+		t.Errorf("Bold: %v", err)
+	}
+	if err := doc.InsertTable(2, 2); err != nil {
+		t.Errorf("InsertTable: %v", err)
+	}
+
 	// LoadFromReader deliberately comes last. Loading a second
 	// document into the same office before a view dance on the first
 	// doc puts LO's layout engine in a state where the subsequent
