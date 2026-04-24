@@ -247,3 +247,27 @@ func TestRealBackend_PartForwarding(t *testing.T) {
 	rb.DocumentSetPartMode(rdoc, 0)
 	rb.DocumentSetOutlineState(rdoc, false, 0, 0, false)
 }
+
+func TestRealBackend_RenderForwarding(t *testing.T) {
+	rb := realBackend{}
+	fakeDocHandle := lokc.NewFakeDocumentHandle()
+	defer lokc.FreeFakeDocumentHandle(fakeDocHandle)
+	rdoc := realDocumentHandle{d: fakeDocHandle}
+
+	// Void forwarders — no panic.
+	rb.DocumentInitializeForRendering(rdoc, "")
+	rb.DocumentSetClientZoom(rdoc, 256, 256, 1440, 1440)
+	rb.DocumentSetClientVisibleArea(rdoc, 0, 0, 14400, 14400)
+	rb.DocumentPaintTile(rdoc, make([]byte, 16), 2, 2, 0, 0, 100, 100)
+	rb.DocumentPaintPartTile(rdoc, make([]byte, 16), 0, 0, 2, 2, 0, 0, 100, 100)
+
+	if got := rb.DocumentGetTileMode(rdoc); got != 0 {
+		t.Errorf("GetTileMode: got %d, want 0", got)
+	}
+	if buf, w, h, ok := rb.DocumentRenderSearchResult(rdoc, "q"); buf != nil || w != 0 || h != 0 || ok {
+		t.Errorf("RenderSearchResult: got (%v, %d, %d, %v)", buf, w, h, ok)
+	}
+	if got := rb.DocumentRenderShapeSelection(rdoc); got != nil {
+		t.Errorf("RenderShapeSelection: got %v, want nil", got)
+	}
+}

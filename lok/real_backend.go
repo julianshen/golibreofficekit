@@ -182,6 +182,31 @@ func (realBackend) DocumentSetOutlineState(d documentHandle, column bool, level,
 	lokc.DocumentSetOutlineState(mustDoc(d).d, column, level, index, hidden)
 }
 
+func (realBackend) DocumentInitializeForRendering(d documentHandle, args string) {
+	lokc.DocumentInitializeForRendering(mustDoc(d).d, args)
+}
+func (realBackend) DocumentGetTileMode(d documentHandle) int {
+	return lokc.DocumentGetTileMode(mustDoc(d).d)
+}
+func (realBackend) DocumentSetClientZoom(d documentHandle, tpw, tph, ttw, tth int) {
+	lokc.DocumentSetClientZoom(mustDoc(d).d, tpw, tph, ttw, tth)
+}
+func (realBackend) DocumentSetClientVisibleArea(d documentHandle, x, y, w, h int) {
+	lokc.DocumentSetClientVisibleArea(mustDoc(d).d, x, y, w, h)
+}
+func (realBackend) DocumentPaintTile(d documentHandle, buf []byte, pxW, pxH, x, y, w, h int) {
+	lokc.DocumentPaintTile(mustDoc(d).d, buf, pxW, pxH, x, y, w, h)
+}
+func (realBackend) DocumentPaintPartTile(d documentHandle, buf []byte, part, mode, pxW, pxH, x, y, w, h int) {
+	lokc.DocumentPaintPartTile(mustDoc(d).d, buf, part, mode, pxW, pxH, x, y, w, h)
+}
+func (realBackend) DocumentRenderSearchResult(d documentHandle, q string) ([]byte, int, int, bool) {
+	return lokc.DocumentRenderSearchResult(mustDoc(d).d, q)
+}
+func (realBackend) DocumentRenderShapeSelection(d documentHandle) []byte {
+	return lokc.DocumentRenderShapeSelection(mustDoc(d).d)
+}
+
 func init() {
 	setBackend(realBackend{})
 }

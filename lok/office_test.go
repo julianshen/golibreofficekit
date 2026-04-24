@@ -7,6 +7,15 @@ import (
 	"testing"
 )
 
+type fakePaint struct {
+	pxW, pxH, x, y, w, h int
+	bufLen               int
+}
+type fakePartPaint struct {
+	part, mode, pxW, pxH, x, y, w, h int
+	bufLen                           int
+}
+
 // fakeBackend is the in-memory test double.
 type fakeBackend struct {
 	mu       sync.Mutex
@@ -64,6 +73,20 @@ type fakeBackend struct {
 	lastOutlineLevel  int
 	lastOutlineIndex  int
 	lastOutlineHidden bool
+
+	// Render state.
+	lastInitArgs    string
+	tileMode        int // fakes can programme this; default 0
+	lastZoom        [4]int
+	lastVisibleArea [4]int
+	paintCalls      []fakePaint
+	partPaintCalls  []fakePartPaint
+	searchResultBuf []byte
+	searchResultPxW int
+	searchResultPxH int
+	searchResultOK  bool
+	lastSearchQuery string
+	shapeSelection  []byte
 }
 
 const fakeViewIDBase = 1000
@@ -461,4 +484,30 @@ func (f *fakeBackend) DocumentSetOutlineState(_ documentHandle, column bool, lev
 	f.lastOutlineLevel = level
 	f.lastOutlineIndex = index
 	f.lastOutlineHidden = hidden
+}
+
+func (f *fakeBackend) DocumentInitializeForRendering(_ documentHandle, args string) {
+	f.lastInitArgs = args
+}
+func (f *fakeBackend) DocumentGetTileMode(documentHandle) int { return f.tileMode }
+func (f *fakeBackend) DocumentSetClientZoom(_ documentHandle, tpw, tph, ttw, tth int) {
+	f.lastZoom = [4]int{tpw, tph, ttw, tth}
+}
+func (f *fakeBackend) DocumentSetClientVisibleArea(_ documentHandle, x, y, w, h int) {
+	f.lastVisibleArea = [4]int{x, y, w, h}
+}
+func (f *fakeBackend) DocumentPaintTile(_ documentHandle, buf []byte, pxW, pxH, x, y, w, h int) {
+	f.paintCalls = append(f.paintCalls, fakePaint{pxW: pxW, pxH: pxH, x: x, y: y, w: w, h: h, bufLen: len(buf)})
+}
+func (f *fakeBackend) DocumentPaintPartTile(_ documentHandle, buf []byte, part, mode, pxW, pxH, x, y, w, h int) {
+	f.partPaintCalls = append(f.partPaintCalls, fakePartPaint{
+		part: part, mode: mode, pxW: pxW, pxH: pxH, x: x, y: y, w: w, h: h, bufLen: len(buf),
+	})
+}
+func (f *fakeBackend) DocumentRenderSearchResult(_ documentHandle, q string) ([]byte, int, int, bool) {
+	f.lastSearchQuery = q
+	return f.searchResultBuf, f.searchResultPxW, f.searchResultPxH, f.searchResultOK
+}
+func (f *fakeBackend) DocumentRenderShapeSelection(documentHandle) []byte {
+	return f.shapeSelection
 }
