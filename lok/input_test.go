@@ -112,6 +112,37 @@ func TestPostKeyEvent_UsesKeyCodeConstant(t *testing.T) {
 	}
 }
 
+func TestKeyCodeConstants_MatchAwtKey(t *testing.T) {
+	// Golden check against com::sun::star::awt::Key (IDL:
+	// offapi/com/sun/star/awt/Key.idl). Catches a typo in the
+	// constants that would otherwise pass the forwarding tests
+	// (which compare symbolically against themselves).
+	cases := []struct {
+		name string
+		got  int
+		want int
+	}{
+		{"Enter", KeyCodeEnter, 1280},
+		{"Esc", KeyCodeEsc, 1281},
+		{"Tab", KeyCodeTab, 1282},
+		{"Backspace", KeyCodeBackspace, 1283},
+		{"Delete", KeyCodeDelete, 1286},
+		{"Up", KeyCodeUp, 1024},
+		{"Down", KeyCodeDown, 1025},
+		{"Left", KeyCodeLeft, 1026},
+		{"Right", KeyCodeRight, 1027},
+		{"Home", KeyCodeHome, 1028},
+		{"End", KeyCodeEnd, 1029},
+		{"PageUp", KeyCodePageUp, 1030},
+		{"PageDown", KeyCodePageDown, 1031},
+	}
+	for _, tc := range cases {
+		if tc.got != tc.want {
+			t.Errorf("KeyCode%s = %d, want %d", tc.name, tc.got, tc.want)
+		}
+	}
+}
+
 func TestPostKeyEvent_Rejects(t *testing.T) {
 	cases := []struct {
 		name              string
@@ -139,35 +170,70 @@ func TestPostKeyEvent_Rejects(t *testing.T) {
 }
 
 func TestPostMouseEvent_Forwards(t *testing.T) {
-	fb := &fakeBackend{}
-	_, doc := loadFakeDoc(t, fb)
-	if err := doc.PostMouseEvent(MouseButtonDown, 720, 960, 1, MouseLeft, ModShift); err != nil {
-		t.Fatal(err)
+	// Cover every named MouseButton / Modifier bit plus one multi-bit
+	// combo each so a `int(buttons & 0x01)` partial-mask regression
+	// would fail at least one row. Also exercises all three
+	// MouseEventType variants.
+	cases := []struct {
+		name    string
+		typ     MouseEventType
+		x, y    int64
+		count   int
+		buttons MouseButton
+		mods    Modifier
+	}{
+		{"left+shift down", MouseButtonDown, 720, 960, 1, MouseLeft, ModShift},
+		{"right alone up", MouseButtonUp, 100, 200, 1, MouseRight, 0},
+		{"middle alone move", MouseMove, 0, 0, 0, MouseMiddle, 0},
+		{"left+middle", MouseButtonDown, 5, 6, 2, MouseLeft | MouseMiddle, 0},
+		{"left+right+middle", MouseButtonDown, 7, 8, 1,
+			MouseLeft | MouseRight | MouseMiddle, 0},
+		{"mod1 only", MouseButtonDown, 1, 2, 1, MouseLeft, ModMod1},
+		{"mod2 only", MouseButtonDown, 1, 2, 1, MouseLeft, ModMod2},
+		{"mod3 only", MouseButtonDown, 1, 2, 1, MouseLeft, ModMod3},
+		{"all mods", MouseButtonDown, 1, 2, 1, MouseLeft,
+			ModShift | ModMod1 | ModMod2 | ModMod3},
 	}
-	if fb.lastMouseType != int(MouseButtonDown) ||
-		fb.lastMouseX != 720 || fb.lastMouseY != 960 ||
-		fb.lastMouseCount != 1 ||
-		fb.lastMouseButton != int(MouseLeft) ||
-		fb.lastMouseMods != int(ModShift) {
-		t.Errorf("fakeBackend state=%+v", fb)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fb := &fakeBackend{}
+			_, doc := loadFakeDoc(t, fb)
+			if err := doc.PostMouseEvent(tc.typ, tc.x, tc.y, tc.count,
+				tc.buttons, tc.mods); err != nil {
+				t.Fatal(err)
+			}
+			if fb.lastMouseType != int(tc.typ) ||
+				fb.lastMouseX != int(tc.x) || fb.lastMouseY != int(tc.y) ||
+				fb.lastMouseCount != tc.count ||
+				fb.lastMouseButton != int(tc.buttons) ||
+				fb.lastMouseMods != int(tc.mods) {
+				t.Errorf("fakeBackend state=%+v; tc=%+v", fb, tc)
+			}
+		})
 	}
 }
 
-func TestPostMouseEvent_RejectsOverflowX(t *testing.T) {
-	_, doc := loadFakeDoc(t, &fakeBackend{})
-	err := doc.PostMouseEvent(MouseMove, 1<<32+1, 0, 0, 0, 0)
-	var lokErr *LOKError
-	if !errors.As(err, &lokErr) || lokErr.Op != "PostMouseEvent" {
-		t.Errorf("want *LOKError{Op: PostMouseEvent}, got %T %v", err, err)
+func TestPostMouseEvent_RejectsOverflow(t *testing.T) {
+	// Cover both positive and negative int32 overflow on both axes so
+	// requireInt32XY's `< math.MinInt32` branches aren't dead.
+	cases := []struct {
+		name string
+		x, y int64
+	}{
+		{"x above MaxInt32", math.MaxInt32 + 1, 0},
+		{"x below MinInt32", math.MinInt32 - 1, 0},
+		{"y above MaxInt32", 0, math.MaxInt32 + 1},
+		{"y below MinInt32", 0, math.MinInt32 - 1},
 	}
-}
-
-func TestPostMouseEvent_RejectsOverflowY(t *testing.T) {
-	_, doc := loadFakeDoc(t, &fakeBackend{})
-	err := doc.PostMouseEvent(MouseMove, 0, 1<<32+1, 0, 0, 0)
-	var lokErr *LOKError
-	if !errors.As(err, &lokErr) || lokErr.Op != "PostMouseEvent" {
-		t.Errorf("want *LOKError{Op: PostMouseEvent}, got %T %v", err, err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, doc := loadFakeDoc(t, &fakeBackend{})
+			err := doc.PostMouseEvent(MouseMove, tc.x, tc.y, 0, 0, 0)
+			var lokErr *LOKError
+			if !errors.As(err, &lokErr) || lokErr.Op != "PostMouseEvent" {
+				t.Errorf("want *LOKError{Op: PostMouseEvent}, got %T %v", err, err)
+			}
+		})
 	}
 }
 
