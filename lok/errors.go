@@ -10,6 +10,7 @@ var (
 	ErrPathRequired        = errors.New("lok: document path is required")
 	ErrInvalidOption       = errors.New("lok: invalid load option (contains reserved character)")
 	ErrViewCreateFailed    = errors.New("lok: view creation failed")
+	ErrUnsupported         = errors.New("lok: operation not supported by this LibreOfficeKit build")
 )
 
 // LOKError wraps an error string returned by LibreOffice itself.
