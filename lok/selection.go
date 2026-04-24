@@ -86,3 +86,66 @@ func (k SelectionKind) String() string {
 		return fmt.Sprintf("SelectionKind(%d)", int(k))
 	}
 }
+
+// validateMime rejects empty / NUL-containing / > 256-byte MIME
+// strings. LOK does its own structural validation; this catches the
+// cases where we would crash or corrupt the C side before reaching
+// it (embedded NUL truncates at C.CString).
+func validateMime(s string) error {
+	if s == "" || len(s) > 256 {
+		return &LOKError{Op: "mime", Detail: "mime type must be non-empty and <= 256 bytes", err: ErrInvalidOption}
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] == 0 {
+			return &LOKError{Op: "mime", Detail: "mime type contains NUL byte", err: ErrInvalidOption}
+		}
+	}
+	return nil
+}
+
+// GetTextSelection copies the current text selection as mimeType.
+// LOK may substitute a different, compatible mime, which is returned
+// in usedMime.
+func (d *Document) GetTextSelection(mimeType string) (text, usedMime string, err error) {
+	if err := validateMime(mimeType); err != nil {
+		return "", "", err
+	}
+	unlock, gerr := d.guard()
+	if gerr != nil {
+		return "", "", gerr
+	}
+	defer unlock()
+	t, m := d.office.be.DocumentGetTextSelection(d.h, mimeType)
+	return t, m, nil
+}
+
+// GetSelectionKind reports what kind of selection is currently
+// active without copying any text. Works on all supported LO
+// versions.
+func (d *Document) GetSelectionKind() (SelectionKind, error) {
+	unlock, err := d.guard()
+	if err != nil {
+		return SelectionKindNone, err
+	}
+	defer unlock()
+	return selectionKindFromLOK(d.office.be.DocumentGetSelectionType(d.h)), nil
+}
+
+// GetSelectionTypeAndText returns the selection kind and the
+// selected text in a single LOK call. Requires LibreOffice >= 7.4;
+// returns ErrUnsupported on older builds.
+func (d *Document) GetSelectionTypeAndText(mimeType string) (kind SelectionKind, text, usedMime string, err error) {
+	if verr := validateMime(mimeType); verr != nil {
+		return SelectionKindNone, "", "", verr
+	}
+	unlock, gerr := d.guard()
+	if gerr != nil {
+		return SelectionKindNone, "", "", gerr
+	}
+	defer unlock()
+	k, t, m, ierr := d.office.be.DocumentGetSelectionTypeAndText(d.h, mimeType)
+	if ierr != nil {
+		return SelectionKindNone, "", "", ierr
+	}
+	return selectionKindFromLOK(k), t, m, nil
+}

@@ -101,6 +101,23 @@ type fakeBackend struct {
 	lastUnoCmd      string
 	lastUnoArgs     string
 	lastUnoNotify   bool
+
+	// Selection state (Phase 8).
+	lastGetSelectionMime string
+	selectionText        string
+	selectionUsedMime    string
+	selectionKind        int
+	selectionTypeTextErr error
+
+	lastSetTextSelectionTyp int
+	lastSetTextSelectionX   int
+	lastSetTextSelectionY   int
+	resetSelectionCalls     int
+	lastSetGraphicTyp       int
+	lastSetGraphicX         int
+	lastSetGraphicY         int
+	lastBlockedViewID       int
+	lastBlockedCSV          string
 }
 
 const fakeViewIDBase = 1000
@@ -560,14 +577,21 @@ func (f *fakeBackend) DocumentSetGraphicSelection(documentHandle, int, int, int)
 func (f *fakeBackend) DocumentSetBlockedCommandList(documentHandle, int, string) {
 	panic("fakeBackend.DocumentSetBlockedCommandList not implemented — added in Phase 8 Task 10")
 }
-func (f *fakeBackend) DocumentGetTextSelection(documentHandle, string) (string, string) {
-	panic("fakeBackend.DocumentGetTextSelection not implemented — added in Phase 8 Task 10")
+func (f *fakeBackend) DocumentGetTextSelection(_ documentHandle, mime string) (string, string) {
+	f.lastGetSelectionMime = mime
+	return f.selectionText, f.selectionUsedMime
 }
+
 func (f *fakeBackend) DocumentGetSelectionType(documentHandle) int {
-	panic("fakeBackend.DocumentGetSelectionType not implemented — added in Phase 8 Task 10")
+	return f.selectionKind
 }
-func (f *fakeBackend) DocumentGetSelectionTypeAndText(documentHandle, string) (int, string, string, error) {
-	panic("fakeBackend.DocumentGetSelectionTypeAndText not implemented — added in Phase 8 Task 10")
+
+func (f *fakeBackend) DocumentGetSelectionTypeAndText(_ documentHandle, mime string) (int, string, string, error) {
+	f.lastGetSelectionMime = mime
+	if f.selectionTypeTextErr != nil {
+		return -1, "", "", f.selectionTypeTextErr
+	}
+	return f.selectionKind, f.selectionText, f.selectionUsedMime, nil
 }
 func (f *fakeBackend) DocumentGetClipboard(documentHandle, []string) ([]clipboardItemInternal, error) {
 	panic("fakeBackend.DocumentGetClipboard not implemented — added in Phase 8 Task 12")
