@@ -100,21 +100,23 @@ func (m Modifier) String() string {
 // Named key-code constants. A curated subset of
 // com::sun::star::awt::Key (IDL: offapi/com/sun/star/awt/Key.idl).
 // KeyCodeEnter maps to awt::Key::RETURN. Callers needing keys
-// outside this set pass the raw awt::Key int directly.
+// outside this set pass the raw awt::Key int directly. Typed as
+// int so the constant flows into PostKeyEvent's keyCode parameter
+// without ambiguity about the underlying numeric type.
 const (
-	KeyCodeEnter     = 1280 // awt::Key::RETURN
-	KeyCodeEsc       = 1281 // awt::Key::ESCAPE
-	KeyCodeTab       = 1282 // awt::Key::TAB
-	KeyCodeBackspace = 1283 // awt::Key::BACKSPACE
-	KeyCodeDelete    = 1286 // awt::Key::DELETE
-	KeyCodeUp        = 1024 // awt::Key::UP
-	KeyCodeDown      = 1025 // awt::Key::DOWN
-	KeyCodeLeft      = 1026 // awt::Key::LEFT
-	KeyCodeRight     = 1027 // awt::Key::RIGHT
-	KeyCodeHome      = 1028 // awt::Key::HOME
-	KeyCodeEnd       = 1029 // awt::Key::END
-	KeyCodePageUp    = 1030 // awt::Key::PAGEUP
-	KeyCodePageDown  = 1031 // awt::Key::PAGEDOWN
+	KeyCodeEnter     int = 1280 // awt::Key::RETURN
+	KeyCodeEsc       int = 1281 // awt::Key::ESCAPE
+	KeyCodeTab       int = 1282 // awt::Key::TAB
+	KeyCodeBackspace int = 1283 // awt::Key::BACKSPACE
+	KeyCodeDelete    int = 1286 // awt::Key::DELETE
+	KeyCodeUp        int = 1024 // awt::Key::UP
+	KeyCodeDown      int = 1025 // awt::Key::DOWN
+	KeyCodeLeft      int = 1026 // awt::Key::LEFT
+	KeyCodeRight     int = 1027 // awt::Key::RIGHT
+	KeyCodeHome      int = 1028 // awt::Key::HOME
+	KeyCodeEnd       int = 1029 // awt::Key::END
+	KeyCodePageUp    int = 1030 // awt::Key::PAGEUP
+	KeyCodePageDown  int = 1031 // awt::Key::PAGEDOWN
 )
 
 // PostKeyEvent posts a keyboard event to the currently active view.
