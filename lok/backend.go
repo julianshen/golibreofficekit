@@ -57,6 +57,14 @@ type backend interface {
 	DocumentPostKeyEvent(d documentHandle, typ, charCode, keyCode int)
 	DocumentPostMouseEvent(d documentHandle, typ, x, y, count, buttons, mods int)
 	DocumentPostUnoCommand(d documentHandle, cmd, args string, notifyWhenFinished bool)
+
+	DocumentSetTextSelection(d documentHandle, typ, x, y int)
+	DocumentResetSelection(d documentHandle)
+	DocumentSetGraphicSelection(d documentHandle, typ, x, y int)
+	DocumentSetBlockedCommandList(d documentHandle, viewID int, csv string)
+	DocumentGetTextSelection(d documentHandle, mimeType string) (text, usedMime string)
+	DocumentGetSelectionType(d documentHandle) int
+	DocumentGetSelectionTypeAndText(d documentHandle, mimeType string) (kind int, text, usedMime string, err error)
 }
 
 // libraryHandle and officeHandle are opaque across the boundary.

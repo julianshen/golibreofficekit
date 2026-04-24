@@ -217,6 +217,36 @@ func (realBackend) DocumentPostUnoCommand(d documentHandle, cmd, args string, no
 	lokc.DocumentPostUnoCommand(mustDoc(d).d, cmd, args, notifyWhenFinished)
 }
 
+func (realBackend) DocumentSetTextSelection(d documentHandle, typ, x, y int) {
+	lokc.DocumentSetTextSelection(mustDoc(d).d, typ, x, y)
+}
+func (realBackend) DocumentResetSelection(d documentHandle) {
+	lokc.DocumentResetSelection(mustDoc(d).d)
+}
+func (realBackend) DocumentSetGraphicSelection(d documentHandle, typ, x, y int) {
+	lokc.DocumentSetGraphicSelection(mustDoc(d).d, typ, x, y)
+}
+func (realBackend) DocumentSetBlockedCommandList(d documentHandle, viewID int, csv string) {
+	lokc.DocumentSetBlockedCommandList(mustDoc(d).d, viewID, csv)
+}
+func (realBackend) DocumentGetTextSelection(d documentHandle, mimeType string) (string, string) {
+	return lokc.DocumentGetTextSelection(mustDoc(d).d, mimeType)
+}
+func (realBackend) DocumentGetSelectionType(d documentHandle) int {
+	return lokc.DocumentGetSelectionType(mustDoc(d).d)
+}
+func (realBackend) DocumentGetSelectionTypeAndText(d documentHandle, mimeType string) (int, string, string, error) {
+	kind, text, mime, err := lokc.DocumentGetSelectionTypeAndText(mustDoc(d).d, mimeType)
+	if err == lokc.ErrUnsupported {
+		return -1, "", "", ErrUnsupported
+	}
+	return kind, text, mime, err
+}
+
+// var _ backend = realBackend{} is a compile-time assertion that
+// realBackend satisfies the full backend interface.
+var _ backend = realBackend{}
+
 func init() {
 	setBackend(realBackend{})
 }

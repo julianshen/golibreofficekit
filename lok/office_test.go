@@ -544,3 +544,28 @@ func (f *fakeBackend) DocumentPostUnoCommand(_ documentHandle, cmd, args string,
 	f.lastUnoArgs = args
 	f.lastUnoNotify = notify
 }
+
+// --- Selection stubs (Phase 8 Task 7) — replaced with real fake
+// implementations in Task 10. ---
+
+func (f *fakeBackend) DocumentSetTextSelection(documentHandle, int, int, int) {
+	panic("fakeBackend.DocumentSetTextSelection not implemented — added in Phase 8 Task 10")
+}
+func (f *fakeBackend) DocumentResetSelection(documentHandle) {
+	panic("fakeBackend.DocumentResetSelection not implemented — added in Phase 8 Task 10")
+}
+func (f *fakeBackend) DocumentSetGraphicSelection(documentHandle, int, int, int) {
+	panic("fakeBackend.DocumentSetGraphicSelection not implemented — added in Phase 8 Task 10")
+}
+func (f *fakeBackend) DocumentSetBlockedCommandList(documentHandle, int, string) {
+	panic("fakeBackend.DocumentSetBlockedCommandList not implemented — added in Phase 8 Task 10")
+}
+func (f *fakeBackend) DocumentGetTextSelection(documentHandle, string) (string, string) {
+	panic("fakeBackend.DocumentGetTextSelection not implemented — added in Phase 8 Task 10")
+}
+func (f *fakeBackend) DocumentGetSelectionType(documentHandle) int {
+	panic("fakeBackend.DocumentGetSelectionType not implemented — added in Phase 8 Task 10")
+}
+func (f *fakeBackend) DocumentGetSelectionTypeAndText(documentHandle, string) (int, string, string, error) {
+	panic("fakeBackend.DocumentGetSelectionTypeAndText not implemented — added in Phase 8 Task 10")
+}
