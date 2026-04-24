@@ -569,3 +569,9 @@ func (f *fakeBackend) DocumentGetSelectionType(documentHandle) int {
 func (f *fakeBackend) DocumentGetSelectionTypeAndText(documentHandle, string) (int, string, string, error) {
 	panic("fakeBackend.DocumentGetSelectionTypeAndText not implemented — added in Phase 8 Task 10")
 }
+func (f *fakeBackend) DocumentGetClipboard(documentHandle, []string) ([]clipboardItemInternal, error) {
+	panic("fakeBackend.DocumentGetClipboard not implemented — added in Phase 8 Task 12")
+}
+func (f *fakeBackend) DocumentSetClipboard(documentHandle, []clipboardItemInternal) error {
+	panic("fakeBackend.DocumentSetClipboard not implemented — added in Phase 8 Task 12")
+}

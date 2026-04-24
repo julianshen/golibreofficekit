@@ -243,6 +243,33 @@ func (realBackend) DocumentGetSelectionTypeAndText(d documentHandle, mimeType st
 	return kind, text, mime, err
 }
 
+func (realBackend) DocumentGetClipboard(d documentHandle, mimeTypes []string) ([]clipboardItemInternal, error) {
+	items, err := lokc.DocumentGetClipboard(mustDoc(d).d, mimeTypes)
+	if err == lokc.ErrUnsupported {
+		return nil, ErrUnsupported
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := make([]clipboardItemInternal, len(items))
+	for i, it := range items {
+		out[i] = clipboardItemInternal{MimeType: it.MimeType, Data: it.Data}
+	}
+	return out, nil
+}
+
+func (realBackend) DocumentSetClipboard(d documentHandle, items []clipboardItemInternal) error {
+	lokItems := make([]lokc.ClipboardItem, len(items))
+	for i, it := range items {
+		lokItems[i] = lokc.ClipboardItem{MimeType: it.MimeType, Data: it.Data}
+	}
+	err := lokc.DocumentSetClipboard(mustDoc(d).d, lokItems)
+	if err == lokc.ErrUnsupported {
+		return ErrUnsupported
+	}
+	return err
+}
+
 // var _ backend = realBackend{} is a compile-time assertion that
 // realBackend satisfies the full backend interface.
 var _ backend = realBackend{}

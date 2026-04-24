@@ -65,6 +65,19 @@ type backend interface {
 	DocumentGetTextSelection(d documentHandle, mimeType string) (text, usedMime string)
 	DocumentGetSelectionType(d documentHandle) int
 	DocumentGetSelectionTypeAndText(d documentHandle, mimeType string) (kind int, text, usedMime string, err error)
+
+	DocumentGetClipboard(d documentHandle, mimeTypes []string) (items []clipboardItemInternal, err error)
+	DocumentSetClipboard(d documentHandle, items []clipboardItemInternal) error
+}
+
+// clipboardItemInternal is the backend-interface mirror of
+// lok.ClipboardItem / lokc.ClipboardItem. The three types carry the
+// same fields; the indirection keeps the public type defined in
+// lok/clipboard.go (Task 12) without the interface needing to import
+// internal/lokc.
+type clipboardItemInternal struct {
+	MimeType string
+	Data     []byte
 }
 
 // libraryHandle and officeHandle are opaque across the boundary.
