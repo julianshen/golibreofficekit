@@ -2,7 +2,10 @@
 
 package lok
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestMouseButton_Has(t *testing.T) {
 	set := MouseLeft | MouseRight
@@ -71,5 +74,84 @@ func TestModifier_String(t *testing.T) {
 		if got := tc.in.String(); got != tc.want {
 			t.Errorf("%d: got %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+func TestPostKeyEvent_Forwards(t *testing.T) {
+	fb := &fakeBackend{}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.PostKeyEvent(KeyEventInput, 'G', 0); err != nil {
+		t.Fatal(err)
+	}
+	if fb.lastKeyType != int(KeyEventInput) || fb.lastCharCode != 'G' || fb.lastKeyCode != 0 {
+		t.Errorf("got (type=%d, char=%d, key=%d); want (0, 71, 0)",
+			fb.lastKeyType, fb.lastCharCode, fb.lastKeyCode)
+	}
+}
+
+func TestPostKeyEvent_UsesKeyCodeConstant(t *testing.T) {
+	fb := &fakeBackend{}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.PostKeyEvent(KeyEventInput, 0, KeyCodeEnter); err != nil {
+		t.Fatal(err)
+	}
+	if fb.lastCharCode != 0 || fb.lastKeyCode != KeyCodeEnter {
+		t.Errorf("got (char=%d, key=%d); want (0, %d)",
+			fb.lastCharCode, fb.lastKeyCode, KeyCodeEnter)
+	}
+}
+
+func TestPostMouseEvent_Forwards(t *testing.T) {
+	fb := &fakeBackend{}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.PostMouseEvent(MouseButtonDown, 720, 960, 1, MouseLeft, ModShift); err != nil {
+		t.Fatal(err)
+	}
+	if fb.lastMouseType != int(MouseButtonDown) ||
+		fb.lastMouseX != 720 || fb.lastMouseY != 960 ||
+		fb.lastMouseCount != 1 ||
+		fb.lastMouseButton != int(MouseLeft) ||
+		fb.lastMouseMods != int(ModShift) {
+		t.Errorf("fakeBackend state=%+v", fb)
+	}
+}
+
+func TestPostMouseEvent_RejectsOverflowX(t *testing.T) {
+	_, doc := loadFakeDoc(t, &fakeBackend{})
+	err := doc.PostMouseEvent(MouseMove, 1<<32+1, 0, 0, 0, 0)
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) || lokErr.Op != "PostMouseEvent" {
+		t.Errorf("want *LOKError{Op: PostMouseEvent}, got %T %v", err, err)
+	}
+}
+
+func TestPostMouseEvent_RejectsOverflowY(t *testing.T) {
+	_, doc := loadFakeDoc(t, &fakeBackend{})
+	err := doc.PostMouseEvent(MouseMove, 0, 1<<32+1, 0, 0, 0)
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) || lokErr.Op != "PostMouseEvent" {
+		t.Errorf("want *LOKError{Op: PostMouseEvent}, got %T %v", err, err)
+	}
+}
+
+func TestPostUnoCommand_Forwards(t *testing.T) {
+	fb := &fakeBackend{}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.PostUnoCommand(".uno:Bold", "", false); err != nil {
+		t.Fatal(err)
+	}
+	if fb.lastUnoCmd != ".uno:Bold" || fb.lastUnoArgs != "" || fb.lastUnoNotify {
+		t.Errorf("fakeBackend state=%+v", fb)
+	}
+}
+
+func TestPostUnoCommand_ForwardsNotifyTrue(t *testing.T) {
+	fb := &fakeBackend{}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.PostUnoCommand(".uno:Save", `{"x":1}`, true); err != nil {
+		t.Fatal(err)
+	}
+	if fb.lastUnoCmd != ".uno:Save" || fb.lastUnoArgs != `{"x":1}` || !fb.lastUnoNotify {
+		t.Errorf("fakeBackend state=%+v", fb)
 	}
 }

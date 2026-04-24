@@ -2,7 +2,11 @@
 
 package lok
 
-import "strings"
+import (
+	"fmt"
+	"math"
+	"strings"
+)
 
 // KeyEventType mirrors LOK_KEYEVENT_*.
 type KeyEventType int
@@ -112,3 +116,63 @@ const (
 	KeyCodePageUp    = 1030 // awt::Key::PAGEUP
 	KeyCodePageDown  = 1031 // awt::Key::PAGEDOWN
 )
+
+// PostKeyEvent posts a keyboard event to the currently active view.
+// charCode is a Unicode code point (0 for non-printables); keyCode
+// is an awt::Key value (0 for plain characters). The caller is
+// responsible for pairing KeyEventInput with a matching KeyEventUp —
+// LOK does not synthesize a release.
+func (d *Document) PostKeyEvent(typ KeyEventType, charCode, keyCode int) error {
+	unlock, err := d.guard()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	d.office.be.DocumentPostKeyEvent(d.h, int(typ), charCode, keyCode)
+	return nil
+}
+
+// PostMouseEvent posts a mouse event at twip coordinates (x, y).
+// count is the click count (1 for single, 2 for double, etc.); for
+// MouseMove, callers typically pass 0 but LOK accepts any value.
+// buttons and mods are OR-ed bitsets. Values of x or y outside
+// int32 return *LOKError{Op:"PostMouseEvent"} without invoking LOK.
+func (d *Document) PostMouseEvent(typ MouseEventType, x, y int64, count int, buttons MouseButton, mods Modifier) error {
+	if err := requireInt32XY("PostMouseEvent", x, y); err != nil {
+		return err
+	}
+	unlock, err := d.guard()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	d.office.be.DocumentPostMouseEvent(d.h, int(typ), int(x), int(y),
+		count, int(buttons), int(mods))
+	return nil
+}
+
+// PostUnoCommand dispatches a .uno:* command to the active view.
+// argsJSON is LOK's raw JSON args string (may be empty).
+// notifyWhenFinished requests a LOK_CALLBACK_UNO_COMMAND_RESULT —
+// the callback wiring lives in a later phase; passing true here
+// is accepted but produces no visible effect until then.
+func (d *Document) PostUnoCommand(cmd, argsJSON string, notifyWhenFinished bool) error {
+	unlock, err := d.guard()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	d.office.be.DocumentPostUnoCommand(d.h, cmd, argsJSON, notifyWhenFinished)
+	return nil
+}
+
+// requireInt32XY returns *LOKError if x or y exceeds int32 range.
+// LOK's postMouseEvent takes C int (32-bit on LP64). Complements
+// requireInt32Rect from render.go.
+func requireInt32XY(op string, x, y int64) error {
+	if x > math.MaxInt32 || x < math.MinInt32 ||
+		y > math.MaxInt32 || y < math.MinInt32 {
+		return &LOKError{Op: op, Detail: fmt.Sprintf("coord out of int32 range: x=%d, y=%d", x, y)}
+	}
+	return nil
+}
