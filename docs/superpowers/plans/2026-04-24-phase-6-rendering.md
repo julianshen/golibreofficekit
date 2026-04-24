@@ -38,7 +38,8 @@ None. The spec was revised during its own review loop to fix the seam coordinate
 | `internal/lokc/render_out.go` (create) | `RenderSearchResult` + `RenderShapeSelection` cgo wrappers that copy+free LOK buffers — inside coverage gate |
 | `internal/lokc/render_test.go` (create) | nil-handle + fake-handle tests |
 | `internal/lokc/bytes.go` (create) | `copyAndFreeBytes` helper for sized unsigned char* buffers |
-| `internal/lokc/bytes_test.go` (create) | Unit test for the helper |
+| `internal/lokc/bytes_test_helper.go` (create) | cgo test helper (`cmallocCopy`) — the package uses cgo, so `import "C"` must live in a non-test file (per `memory/feedback_cgo_in_tests.md`) |
+| `internal/lokc/bytes_test.go` (create) | Unit test for the helper — NO `import "C"` |
 
 ---
 
@@ -235,9 +236,65 @@ Why separate: the two `Render*` cgo wrappers both need it; get the helper landed
 - Create: `internal/lokc/bytes.go`
 - Create: `internal/lokc/bytes_test.go`
 
-### 2.1 Failing test
+### 2.1 Failing test + test helper
 
-- [ ] **Step 1: Create `internal/lokc/bytes_test.go`**
+`import "C"` in a `_test.go` file is forbidden when the package already uses
+cgo (documented in `memory/feedback_cgo_in_tests.md`). Reference: the existing
+`internal/lokc/errstr_test_helper.go` (exports `cstringMalloc`) paired with
+`errstr_test.go` (no `import "C"`). Mirror that pattern.
+
+- [ ] **Step 1: Create `internal/lokc/bytes_test_helper.go`**
+
+  ```go
+  //go:build linux || darwin
+
+  package lokc
+
+  /*
+  #include <stdlib.h>
+  #include <string.h>
+  */
+  import "C"
+
+  import "unsafe"
+
+  // cmallocCopy malloc's a fresh C buffer the size of b, copies b's
+  // contents into it, and returns the raw pointer. Test-only; helpers
+  // that use cgo live in non-test files so go-test's
+  // "cgo in _test.go files not supported" restriction doesn't fire.
+  func cmallocCopy(b []byte) unsafe.Pointer {
+  	if len(b) == 0 {
+  		return C.malloc(1) // non-nil, irrelevant contents
+  	}
+  	p := C.malloc(C.size_t(len(b)))
+  	C.memcpy(p, unsafe.Pointer(&b[0]), C.size_t(len(b)))
+  	return p
+  }
+
+  // cmallocRaw returns a fresh C buffer of n bytes (uninitialised).
+  // Used when we want a non-nil C pointer for a zero-length test.
+  func cmallocRaw(n int) unsafe.Pointer {
+  	if n == 0 {
+  		n = 1
+  	}
+  	return C.malloc(C.size_t(n))
+  }
+
+  // csizeT wraps C.size_t so tests can pass sizes without importing C.
+  // The function body stays in this cgo-enabled file; callers receive
+  // a plain Go value they can hand back to copyAndFreeBytes via a
+  // separate non-cgo wrapper (see below).
+  //
+  // We also provide a thin cgo-free wrapper that takes an int and
+  // calls copyAndFreeBytes under the hood, so tests can stay cgo-free.
+  func copyAndFreeBytesTest(p unsafe.Pointer, n int) []byte {
+  	return copyAndFreeBytes(p, C.size_t(n))
+  }
+  ```
+
+- [ ] **Step 2: Create `internal/lokc/bytes_test.go`**
+
+  No `import "C"` — all cgo calls go through the helper file above.
 
   ```go
   //go:build (linux && (amd64 || arm64)) || (darwin && (amd64 || arm64))
@@ -247,62 +304,44 @@ Why separate: the two `Render*` cgo wrappers both need it; get the helper landed
   import (
   	"bytes"
   	"testing"
-  	"unsafe"
   )
 
-  /*
-  #include <stdlib.h>
-  #include <string.h>
-  */
-  import "C"
-
   func TestCopyAndFreeBytes_CopiesAndFrees(t *testing.T) {
-  	// Allocate a known 5-byte payload in C memory; copyAndFreeBytes
-  	// must return a Go []byte that equals it and then free the C
-  	// buffer. We can't observe the free directly, but the function's
-  	// contract is that the returned slice is independent of the C
-  	// memory.
   	payload := []byte{0xDE, 0xAD, 0xBE, 0xEF, 0x00}
-  	cbuf := C.malloc(C.size_t(len(payload)))
-  	if cbuf == nil {
-  		t.Fatal("malloc failed")
-  	}
-  	// Fill cbuf with payload.
-  	C.memcpy(cbuf, unsafe.Pointer(&payload[0]), C.size_t(len(payload)))
-
-  	got := copyAndFreeBytes(cbuf, C.size_t(len(payload)))
+  	p := cmallocCopy(payload)
+  	got := copyAndFreeBytesTest(p, len(payload))
   	if !bytes.Equal(got, payload) {
   		t.Errorf("got %v, want %v", got, payload)
   	}
   }
 
   func TestCopyAndFreeBytes_NilIsNil(t *testing.T) {
-  	if got := copyAndFreeBytes(nil, 0); got != nil {
+  	if got := copyAndFreeBytesTest(nil, 0); got != nil {
   		t.Errorf("nil input: got %v, want nil", got)
   	}
   }
 
   func TestCopyAndFreeBytes_ZeroLengthFreesAndReturnsNil(t *testing.T) {
-  	cbuf := C.malloc(1) // non-nil but irrelevant contents
-  	if got := copyAndFreeBytes(cbuf, 0); got != nil {
+  	p := cmallocRaw(1) // non-nil but irrelevant contents
+  	if got := copyAndFreeBytesTest(p, 0); got != nil {
   		t.Errorf("0-length: got %v, want nil", got)
   	}
-  	// cbuf must be freed even though n=0 — no way to assert directly;
-  	// contract is documented so leaks would show under valgrind.
+  	// p must be freed even though n=0 — no way to observe directly;
+  	// the helper's contract says copyAndFreeBytes always frees non-nil p.
   }
   ```
 
-- [ ] **Step 2: Run — red**
+- [ ] **Step 3: Run — red**
 
   ```bash
   go test ./internal/lokc/... -run TestCopyAndFreeBytes
   ```
 
-  Expected: compile error `undefined: copyAndFreeBytes`.
+  Expected: compile error `undefined: copyAndFreeBytes` (production helper not written yet).
 
 ### 2.2 Implement
 
-- [ ] **Step 3: Create `internal/lokc/bytes.go`**
+- [ ] **Step 4: Create `internal/lokc/bytes.go`**
 
   ```go
   //go:build linux || darwin
@@ -334,7 +373,7 @@ Why separate: the two `Render*` cgo wrappers both need it; get the helper landed
   }
   ```
 
-- [ ] **Step 4: Run — green**
+- [ ] **Step 5: Run — green**
 
   ```bash
   go test -race ./internal/lokc/... -run TestCopyAndFreeBytes
@@ -342,10 +381,10 @@ Why separate: the two `Render*` cgo wrappers both need it; get the helper landed
 
   Expected: PASS (3 tests).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
   ```bash
-  git add internal/lokc/bytes.go internal/lokc/bytes_test.go
+  git add internal/lokc/bytes.go internal/lokc/bytes_test.go internal/lokc/bytes_test_helper.go
   git commit -m "$(cat <<'EOF'
   feat(lokc): copyAndFreeBytes helper for sized C buffers
 
@@ -938,7 +977,10 @@ Why separate: the two `Render*` cgo wrappers both need it; get the helper landed
   	err := doc.SetClientVisibleArea(TwipRect{X: 0, Y: 0, W: 1<<32 + 1, H: 1})
   	var lokErr *LOKError
   	if !errors.As(err, &lokErr) {
-  		t.Errorf("want *LOKError, got %T %v", err, err)
+  		t.Fatalf("want *LOKError, got %T %v", err, err)
+  	}
+  	if lokErr.Op != "SetClientVisibleArea" {
+  		t.Errorf("Op=%q, want SetClientVisibleArea", lokErr.Op)
   	}
   }
   ```
@@ -1258,7 +1300,7 @@ Why separate: the two `Render*` cgo wrappers both need it; get the helper landed
   // Do not hand buf to long-lived Go structures that might outlive
   // the call stack and then race with GC.
   func (d *Document) PaintTileRaw(buf []byte, pxW, pxH int, r TwipRect) error {
-  	if err := checkPaintBuf(buf, pxW, pxH); err != nil {
+  	if err := checkPaintBuf("PaintTile", buf, pxW, pxH); err != nil {
   		return err
   	}
   	if err := requireInt32Rect("PaintTile", r); err != nil {
@@ -1280,7 +1322,7 @@ Why separate: the two `Render*` cgo wrappers both need it; get the helper landed
   // slide). mode is always 0 in the current binding; the LOK notes
   // mode (Impress) is not exposed yet.
   func (d *Document) PaintPartTileRaw(buf []byte, part, pxW, pxH int, r TwipRect) error {
-  	if err := checkPaintBuf(buf, pxW, pxH); err != nil {
+  	if err := checkPaintBuf("PaintPartTile", buf, pxW, pxH); err != nil {
   		return err
   	}
   	if err := requireInt32Rect("PaintPartTile", r); err != nil {
@@ -1324,12 +1366,13 @@ Why separate: the two `Render*` cgo wrappers both need it; get the helper landed
   }
 
   // checkPaintBuf is the buffer-size precondition shared by the two
-  // Raw paint methods. Returns *LOKError on mismatch so callers get
-  // the typed error the rest of the binding uses.
-  func checkPaintBuf(buf []byte, pxW, pxH int) error {
+  // Raw paint methods. Returns *LOKError on mismatch; op labels which
+  // caller ("PaintTile" or "PaintPartTile") so the error surface stays
+  // consistent with the rest of the binding.
+  func checkPaintBuf(op string, buf []byte, pxW, pxH int) error {
   	want := 4 * pxW * pxH
   	if len(buf) != want {
-  		return &LOKError{Op: "PaintTile", Detail: fmt.Sprintf("buffer size mismatch: len=%d, want %d", len(buf), want)}
+  		return &LOKError{Op: op, Detail: fmt.Sprintf("buffer size mismatch: len=%d, want %d", len(buf), want)}
   	}
   	return nil
   }
@@ -1675,7 +1718,13 @@ Place the new subtests between the existing `PartPageRectangles` block and the `
 
 - [ ] **Step 1: Modify `lok/integration_test.go`**
 
-  Find the line that begins the `LoadFromReader` block (the comment starts with `// LoadFromReader deliberately comes last.`). Insert the following immediately BEFORE that comment:
+  First, add `"errors"` to the import block at the top of the file — the
+  new subtests use `errors.As`. The existing imports are `bytes`, `os`,
+  `path/filepath`, `strings`, `testing`; `errors` must be added
+  (alphabetical position between `bytes` and `os`). `goimports` handles
+  this automatically if you run it.
+
+  Then find the line that begins the `LoadFromReader` block (the comment starts with `// LoadFromReader deliberately comes last.`). Insert the following immediately BEFORE that comment:
 
   ```go
   	// Rendering round-trip on doc.
@@ -1804,7 +1853,7 @@ Place the new subtests between the existing `PartPageRectangles` block and the `
   gh pr create --title "feat(lok): Phase 6 — Rendering (tiles, search, shape selection)" --body "$(cat <<'EOF'
   ## Summary
   - Adds the rendering surface of the LOK binding per `docs/superpowers/specs/2026-04-24-phase-6-rendering-design.md`.
-  - 11 new public `Document` methods: `InitializeForRendering`, `SetClientZoom`, `SetClientVisibleArea`, `PaintTile(Raw)`, `PaintPartTile(Raw)`, `RenderSearchResult(Raw)`, `RenderShapeSelection`.
+  - 10 new public `Document` methods: `InitializeForRendering`, `SetClientZoom`, `SetClientVisibleArea`, `PaintTile`, `PaintTileRaw`, `PaintPartTile`, `PaintPartTileRaw`, `RenderSearchResult`, `RenderSearchResultRaw`, `RenderShapeSelection`.
   - New pure-Go `pixels.go` unpremultiplies BGRA → NRGBA with golden-byte tests.
   - Tile-mode verified once in `InitializeForRendering`; non-BGRA surfaces as `*LOKError`.
   - Buffer-size and int32 range checks on `PaintTileRaw` return typed errors without calling LOK.
