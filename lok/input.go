@@ -142,6 +142,11 @@ const (
 // is an awt::Key value (0 for plain characters). The caller is
 // responsible for pairing KeyEventInput with a matching KeyEventUp —
 // LOK does not synthesize a release.
+//
+// LOK exposes no synchronous result for input events; mutations become
+// observable only through a registered document callback. Values of
+// charCode or keyCode outside int32 return *LOKError{Op:"PostKeyEvent"}
+// without invoking LOK.
 func (d *Document) PostKeyEvent(typ KeyEventType, charCode, keyCode int) error {
 	if err := requireInt32Key("PostKeyEvent", charCode, keyCode); err != nil {
 		return err
@@ -157,9 +162,13 @@ func (d *Document) PostKeyEvent(typ KeyEventType, charCode, keyCode int) error {
 
 // PostMouseEvent posts a mouse event at twip coordinates (x, y).
 // count is the click count (1 for single, 2 for double, etc.); for
-// MouseMove, callers typically pass 0 but LOK accepts any value.
-// buttons and mods are OR-ed bitsets. Values of x or y outside
-// int32 return *LOKError{Op:"PostMouseEvent"} without invoking LOK.
+// MouseMove the binding passes count through unchanged, with 0 the
+// conventional value. buttons and mods are OR-ed bitsets.
+//
+// LOK exposes no synchronous result for input events; mutations become
+// observable only through a registered document callback. Values of
+// x or y outside int32 return *LOKError{Op:"PostMouseEvent"} without
+// invoking LOK.
 func (d *Document) PostMouseEvent(typ MouseEventType, x, y int64, count int, buttons MouseButton, mods Modifier) error {
 	if err := requireInt32XY("PostMouseEvent", x, y); err != nil {
 		return err
@@ -176,9 +185,11 @@ func (d *Document) PostMouseEvent(typ MouseEventType, x, y int64, count int, but
 
 // PostUnoCommand dispatches a .uno:* command to the active view.
 // argsJSON is LOK's raw JSON args string (may be empty).
-// notifyWhenFinished requests a LOK_CALLBACK_UNO_COMMAND_RESULT —
-// the callback wiring lives in a later phase; passing true here
-// is accepted but produces no visible effect until then.
+// notifyWhenFinished requests a LOK_CALLBACK_UNO_COMMAND_RESULT;
+// the flag is forwarded verbatim but results, and any dispatcher-side
+// failures, are observable only through a registered document
+// callback — LOK exposes no synchronous error channel for UNO
+// dispatch.
 func (d *Document) PostUnoCommand(cmd, argsJSON string, notifyWhenFinished bool) error {
 	unlock, err := d.guard()
 	if err != nil {

@@ -39,9 +39,9 @@ func DocumentPostKeyEvent(d DocumentHandle, typ, charCode, keyCode int) {
 }
 
 // DocumentPostMouseEvent forwards to pClass->postMouseEvent. typ is
-// LOK_MOUSEEVENT_*; x, y are twip coordinates (fit in C int); count
-// is click count; buttons and mods are OR-ed awt::MouseButton and
-// awt::KeyModifier bitsets.
+// LOK_MOUSEEVENT_*; x, y are twip coordinates (caller must ensure
+// they fit in C int — 32-bit on LP64); count is click count; buttons
+// and mods are OR-ed awt::MouseButton and awt::KeyModifier bitsets.
 func DocumentPostMouseEvent(d DocumentHandle, typ, x, y, count, buttons, mods int) {
 	if !d.IsValid() {
 		return
@@ -52,8 +52,8 @@ func DocumentPostMouseEvent(d DocumentHandle, typ, x, y, count, buttons, mods in
 
 // DocumentPostUnoCommand forwards to pClass->postUnoCommand. args
 // may be empty; notifyWhenFinished requests a
-// LOK_CALLBACK_UNO_COMMAND_RESULT on completion (callback wiring
-// lives in a later phase).
+// LOK_CALLBACK_UNO_COMMAND_RESULT on completion, observable only via
+// a registered document callback.
 func DocumentPostUnoCommand(d DocumentHandle, cmd, args string, notifyWhenFinished bool) {
 	if !d.IsValid() {
 		return

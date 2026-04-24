@@ -19,3 +19,6 @@ coverage.html
 *.test
 *.out
 .~lock.*#
+
+# Session state from tooling plugins
+.remember/
