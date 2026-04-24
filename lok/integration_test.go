@@ -451,6 +451,51 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 		t.Errorf("Phase 8: SetBlockedCommandList: %v", err)
 	}
 
+	// --- Phase 8: clipboard round-trip ---
+	//
+	// setClipboard / getClipboard do not depend on registerCallback
+	// — they are synchronous. Assert, don't skip.
+	in := []ClipboardItem{
+		{MimeType: "text/plain;charset=utf-8", Data: []byte("hi")},
+	}
+	if err := doc.SetClipboard(in); err != nil {
+		t.Errorf("Phase 8: SetClipboard: %v", err)
+	}
+
+	items, err := doc.GetClipboard(nil)
+	if err != nil {
+		t.Errorf("Phase 8: GetClipboard(nil): %v", err)
+	}
+	var clipFound bool
+	for _, it := range items {
+		if strings.HasPrefix(it.MimeType, "text/plain") && string(it.Data) == "hi" {
+			clipFound = true
+			break
+		}
+	}
+	if !clipFound {
+		t.Errorf("Phase 8: text/plain hi not found in clipboard items: %+v", items)
+	}
+
+	req := []string{"text/plain;charset=utf-8", "application/x-totally-not-a-thing"}
+	got, err := doc.GetClipboard(req)
+	if err != nil {
+		t.Errorf("Phase 8: GetClipboard(req): %v", err)
+	}
+	if len(got) != len(req) {
+		t.Errorf("Phase 8: len(got)=%d, want %d", len(got), len(req))
+	} else {
+		if got[0].Data == nil {
+			t.Errorf("Phase 8: got[0].Data is nil; want bytes")
+		}
+		if got[1].Data != nil {
+			t.Errorf("Phase 8: got[1].Data=%v; want nil for unsupported mime", got[1].Data)
+		}
+		if got[1].MimeType != "application/x-totally-not-a-thing" {
+			t.Logf("Phase 8: got[1].MimeType=%q (normalised by LOK)", got[1].MimeType)
+		}
+	}
+
 	// LoadFromReader deliberately comes last. Loading a second
 	// document into the same office before a view dance on the first
 	// doc puts LO's layout engine in a state where the subsequent
