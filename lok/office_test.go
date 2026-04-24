@@ -118,6 +118,13 @@ type fakeBackend struct {
 	lastSetGraphicY         int
 	lastBlockedViewID       int
 	lastBlockedCSV          string
+
+	// Clipboard state (Phase 8).
+	lastGetClipboardMimes []string
+	getClipboardResult    []clipboardItemInternal
+	getClipboardErr       error
+	lastSetClipboardItems []clipboardItemInternal
+	setClipboardErr       error
 }
 
 const fakeViewIDBase = 1000
@@ -600,9 +607,22 @@ func (f *fakeBackend) DocumentGetSelectionTypeAndText(_ documentHandle, mime str
 	}
 	return f.selectionKind, f.selectionText, f.selectionUsedMime, nil
 }
-func (f *fakeBackend) DocumentGetClipboard(documentHandle, []string) ([]clipboardItemInternal, error) {
-	panic("fakeBackend.DocumentGetClipboard not implemented — added in Phase 8 Task 12")
+func (f *fakeBackend) DocumentGetClipboard(_ documentHandle, mimes []string) ([]clipboardItemInternal, error) {
+	// Record a copy so test mutations don't race with the fake.
+	if mimes != nil {
+		f.lastGetClipboardMimes = append([]string(nil), mimes...)
+	} else {
+		f.lastGetClipboardMimes = nil
+	}
+	if f.getClipboardErr != nil {
+		return nil, f.getClipboardErr
+	}
+	out := make([]clipboardItemInternal, len(f.getClipboardResult))
+	copy(out, f.getClipboardResult)
+	return out, nil
 }
-func (f *fakeBackend) DocumentSetClipboard(documentHandle, []clipboardItemInternal) error {
-	panic("fakeBackend.DocumentSetClipboard not implemented — added in Phase 8 Task 12")
+
+func (f *fakeBackend) DocumentSetClipboard(_ documentHandle, items []clipboardItemInternal) error {
+	f.lastSetClipboardItems = append([]clipboardItemInternal(nil), items...)
+	return f.setClipboardErr
 }
