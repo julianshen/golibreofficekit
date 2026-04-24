@@ -82,3 +82,24 @@ func TestUnpremultiplyBGRAToNRGBA_TwoByTwo(t *testing.T) {
 		t.Errorf("got %v, want %v", dst, want)
 	}
 }
+
+func TestUnpremultiplyBGRAToNRGBA_InPlace(t *testing.T) {
+	// Contract: src and dst may alias. Future paint-convenience
+	// wrappers rely on this — passing img.Pix as both src and dst
+	// halves allocation per tile. Assert the in-place result equals
+	// the non-aliased result for the same input.
+	input := []byte{
+		0, 0, 255, 255, // red
+		0, 0, 128, 128, // 50% red
+	}
+
+	dst := make([]byte, len(input))
+	unpremultiplyBGRAToNRGBA(dst, input, 2, 1)
+
+	inPlace := append([]byte(nil), input...)
+	unpremultiplyBGRAToNRGBA(inPlace, inPlace, 2, 1)
+
+	if !bytes.Equal(dst, inPlace) {
+		t.Errorf("in-place: got %v, want %v", inPlace, dst)
+	}
+}
