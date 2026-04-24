@@ -49,3 +49,30 @@ func TestDocumentGetTextSelection_NilSafe(t *testing.T) {
 		t.Errorf("nil pClass: got (%q, %q), want empty strings", text, mime)
 	}
 }
+
+func TestDocumentGetSelectionType_NilSafe(t *testing.T) {
+	if got := DocumentGetSelectionType(DocumentHandle{}); got != -1 {
+		t.Errorf("zero handle: got %d, want -1", got)
+	}
+	if got := DocumentGetSelectionType(newFakeDoc(t)); got != -1 {
+		t.Errorf("nil pClass: got %d, want -1", got)
+	}
+}
+
+func TestDocumentGetSelectionTypeAndText_UnsupportedOnNilSlot(t *testing.T) {
+	// Zero handle maps to Unsupported (the slot is effectively NULL).
+	kind, text, mime, err := DocumentGetSelectionTypeAndText(DocumentHandle{}, "text/plain")
+	if err == nil || err != ErrUnsupported {
+		t.Errorf("zero handle: err=%v, want ErrUnsupported", err)
+	}
+	if kind != -1 || text != "" || mime != "" {
+		t.Errorf("zero handle: non-zero out values (%d, %q, %q)", kind, text, mime)
+	}
+	kind, text, mime, err = DocumentGetSelectionTypeAndText(newFakeDoc(t), "text/plain")
+	if err != ErrUnsupported {
+		t.Errorf("nil pClass: err=%v, want ErrUnsupported", err)
+	}
+	if kind != -1 || text != "" || mime != "" {
+		t.Errorf("nil pClass: non-zero out values (%d, %q, %q)", kind, text, mime)
+	}
+}

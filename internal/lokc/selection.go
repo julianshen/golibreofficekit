@@ -30,10 +30,36 @@ static char* go_doc_get_text_selection(LibreOfficeKitDocument* d, const char* mi
     }
     return d->pClass->getTextSelection(d, mime, usedMime);
 }
+
+static int go_doc_get_selection_type(LibreOfficeKitDocument* d) {
+    if (d == NULL || d->pClass == NULL || d->pClass->getSelectionType == NULL) return -1;
+    return d->pClass->getSelectionType(d);
+}
+
+// Returns:
+//   0 when the slot is NULL (unsupported)
+//   1 when the call was made; *outKind, *outText, *outMime are populated
+static int go_doc_get_selection_type_and_text(LibreOfficeKitDocument* d,
+                                              const char* mime,
+                                              int* outKind,
+                                              char** outText,
+                                              char** outMime) {
+    if (d == NULL || d->pClass == NULL || d->pClass->getSelectionTypeAndText == NULL) {
+        *outKind = -1;
+        *outText = NULL;
+        *outMime = NULL;
+        return 0;
+    }
+    *outKind = d->pClass->getSelectionTypeAndText(d, mime, outText, outMime);
+    return 1;
+}
 */
 import "C"
 
-import "unsafe"
+import (
+	"errors"
+	"unsafe"
+)
 
 // DocumentSetTextSelection forwards to pClass->setTextSelection.
 // typ is LOK_SETTEXTSELECTION_START|END|RESET; x, y are twips.
@@ -85,4 +111,36 @@ func DocumentGetTextSelection(d DocumentHandle, mimeType string) (string, string
 	var usedMime *C.char
 	text := C.go_doc_get_text_selection(d.p, cmime, &usedMime)
 	return copyAndFree(text), copyAndFree(usedMime)
+}
+
+// ErrUnsupported is returned when the LOK function pointer for an
+// operation is NULL on the loaded LibreOffice build. The public
+// lok.ErrUnsupported sentinel wraps this.
+var ErrUnsupported = errors.New("lokc: LOK vtable slot is NULL")
+
+// DocumentGetSelectionType returns the LOK_SELTYPE_* value for the
+// current selection, or -1 when the handle or vtable slot is NULL.
+func DocumentGetSelectionType(d DocumentHandle) int {
+	if !d.IsValid() {
+		return -1
+	}
+	return int(C.go_doc_get_selection_type(d.p))
+}
+
+// DocumentGetSelectionTypeAndText reads both the selection kind and
+// the selected text in one LOK call (LO 7.4+). Returns ErrUnsupported
+// when the pClass slot is NULL.
+func DocumentGetSelectionTypeAndText(d DocumentHandle, mimeType string) (kind int, text, usedMime string, err error) {
+	if !d.IsValid() {
+		return -1, "", "", ErrUnsupported
+	}
+	cmime := C.CString(mimeType)
+	defer C.free(unsafe.Pointer(cmime))
+	var ck C.int
+	var cText, cMime *C.char
+	ok := C.go_doc_get_selection_type_and_text(d.p, cmime, &ck, &cText, &cMime)
+	if ok == 0 {
+		return -1, "", "", ErrUnsupported
+	}
+	return int(ck), copyAndFree(cText), copyAndFree(cMime), nil
 }
