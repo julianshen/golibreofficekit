@@ -40,8 +40,14 @@ func (b MouseButton) Has(other MouseButton) bool {
 	return b&other == other
 }
 
+// allMouseButtons masks the named bits. Bits outside this mask are
+// rendered as a hex fallback by String.
+const allMouseButtons = MouseLeft | MouseRight | MouseMiddle
+
 // String renders a pipe-separated list of the set bits, or "(none)"
-// when no bits are set. Order: Left, Right, Middle.
+// when no bits are set. Named bits come first in the fixed order
+// Left, Right, Middle; any unknown remainder is appended as "0xN"
+// so values outside the named set round-trip losslessly.
 func (b MouseButton) String() string {
 	if b == 0 {
 		return "(none)"
@@ -55,6 +61,9 @@ func (b MouseButton) String() string {
 	}
 	if b.Has(MouseMiddle) {
 		parts = append(parts, "MouseMiddle")
+	}
+	if rest := b &^ allMouseButtons; rest != 0 {
+		parts = append(parts, fmt.Sprintf("0x%x", uint16(rest)))
 	}
 	return strings.Join(parts, "|")
 }
@@ -75,8 +84,14 @@ func (m Modifier) Has(other Modifier) bool {
 	return m&other == other
 }
 
+// allModifiers masks the named bits. Bits outside this mask are
+// rendered as a hex fallback by String.
+const allModifiers = ModShift | ModMod1 | ModMod2 | ModMod3
+
 // String renders a pipe-separated list of the set bits, or "(none)"
-// when no bits are set. Order: Shift, Mod1, Mod2, Mod3.
+// when no bits are set. Named bits come first in the fixed order
+// Shift, Mod1, Mod2, Mod3; any unknown remainder is appended as
+// "0xN" so values outside the named set round-trip losslessly.
 func (m Modifier) String() string {
 	if m == 0 {
 		return "(none)"
@@ -93,6 +108,9 @@ func (m Modifier) String() string {
 	}
 	if m.Has(ModMod3) {
 		parts = append(parts, "ModMod3")
+	}
+	if rest := m &^ allModifiers; rest != 0 {
+		parts = append(parts, fmt.Sprintf("0x%x", uint16(rest)))
 	}
 	return strings.Join(parts, "|")
 }

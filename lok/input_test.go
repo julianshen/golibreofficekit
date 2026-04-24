@@ -36,6 +36,11 @@ func TestMouseButton_String(t *testing.T) {
 		{MouseLeft, "MouseLeft"},
 		{MouseLeft | MouseRight, "MouseLeft|MouseRight"},
 		{MouseLeft | MouseMiddle | MouseRight, "MouseLeft|MouseRight|MouseMiddle"},
+		// Unknown bits must render losslessly; "" is not an acceptable
+		// String() output for a non-zero value.
+		{MouseButton(8), "0x8"},
+		{MouseLeft | MouseButton(8), "MouseLeft|0x8"},
+		{MouseButton(0xFFF8), "0xfff8"},
 	}
 	for _, tc := range cases {
 		if got := tc.in.String(); got != tc.want {
@@ -69,6 +74,11 @@ func TestModifier_String(t *testing.T) {
 		{ModShift, "ModShift"},
 		{ModShift | ModMod1, "ModShift|ModMod1"},
 		{ModShift | ModMod1 | ModMod2 | ModMod3, "ModShift|ModMod1|ModMod2|ModMod3"},
+		// Unknown bits must render losslessly; "" is not an acceptable
+		// String() output for a non-zero value.
+		{Modifier(0x10), "0x10"},
+		{ModShift | Modifier(0x10), "ModShift|0x10"},
+		{Modifier(0xFFF0), "0xfff0"},
 	}
 	for _, tc := range cases {
 		if got := tc.in.String(); got != tc.want {
