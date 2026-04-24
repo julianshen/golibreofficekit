@@ -328,6 +328,33 @@ func TestRenderShapeSelection_ReturnsBytes(t *testing.T) {
 	}
 }
 
+func TestRenderMethods_AfterCloseErrors(t *testing.T) {
+	cases := []struct {
+		name string
+		call func(*Document) error
+	}{
+		{"InitializeForRendering", func(d *Document) error { return d.InitializeForRendering("") }},
+		{"SetClientZoom", func(d *Document) error { return d.SetClientZoom(1, 1, 1, 1) }},
+		{"SetClientVisibleArea", func(d *Document) error { return d.SetClientVisibleArea(TwipRect{}) }},
+		{"PaintTileRaw", func(d *Document) error { return d.PaintTileRaw(make([]byte, 4), 1, 1, TwipRect{}) }},
+		{"PaintTile", func(d *Document) error { _, err := d.PaintTile(1, 1, TwipRect{}); return err }},
+		{"PaintPartTileRaw", func(d *Document) error { return d.PaintPartTileRaw(make([]byte, 4), 0, 1, 1, TwipRect{}) }},
+		{"PaintPartTile", func(d *Document) error { _, err := d.PaintPartTile(0, 1, 1, TwipRect{}); return err }},
+		{"RenderSearchResultRaw", func(d *Document) error { _, _, _, err := d.RenderSearchResultRaw("q"); return err }},
+		{"RenderSearchResult", func(d *Document) error { _, err := d.RenderSearchResult("q"); return err }},
+		{"RenderShapeSelection", func(d *Document) error { _, err := d.RenderShapeSelection(); return err }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, doc := loadFakeDoc(t, &fakeBackend{tileMode: 1})
+			doc.Close()
+			if err := tc.call(doc); !errors.Is(err, ErrClosed) {
+				t.Errorf("want ErrClosed, got %v", err)
+			}
+		})
+	}
+}
+
 // fakePaintingBackend extends fakeBackend with a programmable tile
 // payload that PaintTile writes into the caller's buffer, so the
 // unpremultiply path has something deterministic to decode.
