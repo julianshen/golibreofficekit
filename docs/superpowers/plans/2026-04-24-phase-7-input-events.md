@@ -1145,7 +1145,7 @@ Constraint recap (`memory/feedback_lok_singleton_per_process.md`): all subtests 
   }
   ```
 
-  Also add `"io"` to the imports at the top of the file (alphabetical position after `"bytes"` — and `"archive/zip"` before `"bytes"` from Step 1, if not already added).
+  Also add `"io"` to the imports at the top of the file. Existing imports are `bytes`, `errors`, `os`, `path/filepath`, `strings`, `testing` — after Step 1 you've already prepended `archive/zip`. The alphabetical slot for `io` is BETWEEN `errors` and `os`. Final order: `archive/zip`, `bytes`, `errors`, `io`, `os`, `path/filepath`, `strings`, `testing`.
 
 ### Step 4: Run
 
