@@ -103,7 +103,7 @@ func DocumentGetClipboard(d DocumentHandle, mimeTypes []string) ([]ClipboardItem
 
 	n := int(count)
 	items := make([]ClipboardItem, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		cmime := C.go_doc_clipboard_mime(outMimes, C.size_t(i))
 		sz := C.go_doc_clipboard_size(outSizes, C.size_t(i))
 		cstream := C.go_doc_clipboard_stream(outStreams, C.size_t(i))
