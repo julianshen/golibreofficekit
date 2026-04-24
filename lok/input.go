@@ -143,6 +143,9 @@ const (
 // responsible for pairing KeyEventInput with a matching KeyEventUp —
 // LOK does not synthesize a release.
 func (d *Document) PostKeyEvent(typ KeyEventType, charCode, keyCode int) error {
+	if err := requireInt32Key("PostKeyEvent", charCode, keyCode); err != nil {
+		return err
+	}
 	unlock, err := d.guard()
 	if err != nil {
 		return err
@@ -187,12 +190,25 @@ func (d *Document) PostUnoCommand(cmd, argsJSON string, notifyWhenFinished bool)
 }
 
 // requireInt32XY returns *LOKError if x or y exceeds int32 range.
-// LOK's postMouseEvent takes C int (32-bit on LP64). Complements
-// requireInt32Rect from render.go.
+// LOK's postMouseEvent takes C int (32-bit on LP64).
 func requireInt32XY(op string, x, y int64) error {
 	if x > math.MaxInt32 || x < math.MinInt32 ||
 		y > math.MaxInt32 || y < math.MinInt32 {
 		return &LOKError{Op: op, Detail: fmt.Sprintf("coord out of int32 range: x=%d, y=%d", x, y)}
+	}
+	return nil
+}
+
+// requireInt32Key returns *LOKError if charCode or keyCode exceeds
+// int32 range. LOK's postKeyEvent takes C int (32-bit on LP64);
+// without this guard values outside that range would silently
+// truncate at the cgo boundary.
+func requireInt32Key(op string, charCode, keyCode int) error {
+	if charCode > math.MaxInt32 || charCode < math.MinInt32 ||
+		keyCode > math.MaxInt32 || keyCode < math.MinInt32 {
+		return &LOKError{Op: op,
+			Detail: fmt.Sprintf("charCode/keyCode out of int32 range: charCode=%d, keyCode=%d",
+				charCode, keyCode)}
 	}
 	return nil
 }

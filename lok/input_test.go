@@ -4,6 +4,7 @@ package lok
 
 import (
 	"errors"
+	"math"
 	"testing"
 )
 
@@ -108,6 +109,32 @@ func TestPostKeyEvent_UsesKeyCodeConstant(t *testing.T) {
 	if fb.lastCharCode != 0 || fb.lastKeyCode != KeyCodeEnter {
 		t.Errorf("got (char=%d, key=%d); want (0, %d)",
 			fb.lastCharCode, fb.lastKeyCode, KeyCodeEnter)
+	}
+}
+
+func TestPostKeyEvent_Rejects(t *testing.T) {
+	cases := []struct {
+		name              string
+		charCode, keyCode int
+	}{
+		{"charCode over int32", math.MaxInt32 + 1, 0},
+		{"charCode negative overflow", math.MinInt32 - 1, 0},
+		{"keyCode over int32", 0, math.MaxInt32 + 1},
+		{"keyCode negative overflow", 0, math.MinInt32 - 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fb := &fakeBackend{}
+			_, doc := loadFakeDoc(t, fb)
+			err := doc.PostKeyEvent(KeyEventInput, tc.charCode, tc.keyCode)
+			var lokErr *LOKError
+			if !errors.As(err, &lokErr) || lokErr.Op != "PostKeyEvent" {
+				t.Errorf("want *LOKError{Op: PostKeyEvent}, got %T %v", err, err)
+			}
+			if fb.lastKeyType != 0 || fb.lastCharCode != 0 || fb.lastKeyCode != 0 {
+				t.Errorf("backend invoked despite out-of-range input: %+v", fb)
+			}
+		})
 	}
 }
 
