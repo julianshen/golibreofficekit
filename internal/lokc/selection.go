@@ -23,6 +23,13 @@ static void go_doc_set_blocked_command_list(LibreOfficeKitDocument* d, int viewI
     if (d == NULL || d->pClass == NULL || d->pClass->setBlockedCommandList == NULL) return;
     d->pClass->setBlockedCommandList(d, viewId, csv);
 }
+static char* go_doc_get_text_selection(LibreOfficeKitDocument* d, const char* mime, char** usedMime) {
+    if (d == NULL || d->pClass == NULL || d->pClass->getTextSelection == NULL) {
+        if (usedMime != NULL) *usedMime = NULL;
+        return NULL;
+    }
+    return d->pClass->getTextSelection(d, mime, usedMime);
+}
 */
 import "C"
 
@@ -64,4 +71,18 @@ func DocumentSetBlockedCommandList(d DocumentHandle, viewID int, csv string) {
 	ccsv := C.CString(csv)
 	defer C.free(unsafe.Pointer(ccsv))
 	C.go_doc_set_blocked_command_list(d.p, C.int(viewID), ccsv)
+}
+
+// DocumentGetTextSelection copies the current text selection as the
+// requested mime type. Returns (text, usedMime). Both strings are
+// empty when LOK has nothing to return or the vtable slot is NULL.
+func DocumentGetTextSelection(d DocumentHandle, mimeType string) (string, string) {
+	if !d.IsValid() {
+		return "", ""
+	}
+	cmime := C.CString(mimeType)
+	defer C.free(unsafe.Pointer(cmime))
+	var usedMime *C.char
+	text := C.go_doc_get_text_selection(d.p, cmime, &usedMime)
+	return copyAndFree(text), copyAndFree(usedMime)
 }

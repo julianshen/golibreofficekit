@@ -38,3 +38,14 @@ func TestDocumentSetBlockedCommandList_NilSafe(t *testing.T) {
 	DocumentSetBlockedCommandList(DocumentHandle{}, 0, ".uno:Save")
 	DocumentSetBlockedCommandList(newFakeDoc(t), 1, ".uno:Save,.uno:SaveAs")
 }
+
+func TestDocumentGetTextSelection_NilSafe(t *testing.T) {
+	// Zero handle and fake-pClass both yield empty strings without crashing.
+	if text, mime := DocumentGetTextSelection(DocumentHandle{}, "text/plain"); text != "" || mime != "" {
+		t.Errorf("zero handle: got (%q, %q), want empty strings", text, mime)
+	}
+	h := newFakeDoc(t)
+	if text, mime := DocumentGetTextSelection(h, "text/plain"); text != "" || mime != "" {
+		t.Errorf("nil pClass: got (%q, %q), want empty strings", text, mime)
+	}
+}
