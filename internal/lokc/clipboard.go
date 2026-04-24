@@ -142,8 +142,9 @@ func DocumentSetClipboard(d DocumentHandle, items []ClipboardItem) error {
 		streamsPtr unsafe.Pointer
 		cMimes     **C.char
 		cSizes     *C.size_t
-		cStreams    **C.char
+		cStreams   **C.char
 	)
+	// Build three parallel C-heap arrays; skip malloc on empty input.
 	if n > 0 {
 		mimesPtr = C.malloc(C.size_t(n) * C.size_t(unsafe.Sizeof(uintptr(0))))
 		sizesPtr = C.malloc(C.size_t(n) * C.size_t(unsafe.Sizeof(C.size_t(0))))
