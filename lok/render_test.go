@@ -210,6 +210,124 @@ func TestPaintPartTileRaw_PassesPart(t *testing.T) {
 	}
 }
 
+func TestRenderSearchResultRaw_NoMatch(t *testing.T) {
+	fb := &fakeBackend{tileMode: 1} // searchResultOK defaults to false
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.InitializeForRendering(""); err != nil {
+		t.Fatal(err)
+	}
+	buf, w, h, err := doc.RenderSearchResultRaw("nope")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if buf != nil || w != 0 || h != 0 {
+		t.Errorf("no-match: got (%v, %d, %d), want (nil, 0, 0)", buf, w, h)
+	}
+	if fb.lastSearchQuery != "nope" {
+		t.Errorf("query not forwarded: %q", fb.lastSearchQuery)
+	}
+}
+
+func TestRenderSearchResultRaw_Match(t *testing.T) {
+	bgra := []byte{0, 0, 255, 255} // opaque red pixel
+	fb := &fakeBackend{
+		tileMode:        1,
+		searchResultBuf: bgra,
+		searchResultPxW: 1,
+		searchResultPxH: 1,
+		searchResultOK:  true,
+	}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.InitializeForRendering(""); err != nil {
+		t.Fatal(err)
+	}
+	buf, w, h, err := doc.RenderSearchResultRaw("q")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(buf, bgra) || w != 1 || h != 1 {
+		t.Errorf("got (%v, %d, %d)", buf, w, h)
+	}
+}
+
+func TestRenderSearchResult_UnpremultipliesToNRGBA(t *testing.T) {
+	fb := &fakeBackend{
+		tileMode:        1,
+		searchResultBuf: []byte{0, 0, 255, 255}, // red
+		searchResultPxW: 1,
+		searchResultPxH: 1,
+		searchResultOK:  true,
+	}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.InitializeForRendering(""); err != nil {
+		t.Fatal(err)
+	}
+	img, err := doc.RenderSearchResult("q")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if img == nil {
+		t.Fatal("img is nil on match")
+	}
+	want := []byte{255, 0, 0, 255}
+	if !bytes.Equal(img.Pix, want) {
+		t.Errorf("got %v, want %v", img.Pix, want)
+	}
+}
+
+func TestRenderSearchResult_NoMatch(t *testing.T) {
+	_, doc := loadFakeDoc(t, &fakeBackend{tileMode: 1})
+	if err := doc.InitializeForRendering(""); err != nil {
+		t.Fatal(err)
+	}
+	img, err := doc.RenderSearchResult("nope")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if img != nil {
+		t.Errorf("no-match: img=%v, want nil", img)
+	}
+}
+
+func TestRenderSearchResult_RequiresInitialize(t *testing.T) {
+	_, doc := loadFakeDoc(t, &fakeBackend{tileMode: 1, searchResultOK: true})
+	_, err := doc.RenderSearchResult("q")
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) {
+		t.Errorf("want *LOKError, got %T %v", err, err)
+	}
+}
+
+func TestRenderShapeSelection_Empty(t *testing.T) {
+	_, doc := loadFakeDoc(t, &fakeBackend{tileMode: 1})
+	if err := doc.InitializeForRendering(""); err != nil {
+		t.Fatal(err)
+	}
+	got, err := doc.RenderShapeSelection()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Errorf("empty: got %v, want nil", got)
+	}
+}
+
+func TestRenderShapeSelection_ReturnsBytes(t *testing.T) {
+	payload := []byte("<svg/>")
+	fb := &fakeBackend{tileMode: 1, shapeSelection: payload}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.InitializeForRendering(""); err != nil {
+		t.Fatal(err)
+	}
+	got, err := doc.RenderShapeSelection()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Errorf("got %q, want %q", got, payload)
+	}
+}
+
 // fakePaintingBackend extends fakeBackend with a programmable tile
 // payload that PaintTile writes into the caller's buffer, so the
 // unpremultiply path has something deterministic to decode.

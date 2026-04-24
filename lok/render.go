@@ -170,3 +170,54 @@ func checkPaintBuf(op string, buf []byte, pxW, pxH int) error {
 	}
 	return nil
 }
+
+// RenderSearchResultRaw asks LOK to render the first match of query
+// as a premultiplied BGRA bitmap. query is the LOK `.uno:SearchItem`
+// JSON payload. Returns (nil, 0, 0, nil) on no match — the error
+// path is reserved for binding-side failures like a closed document
+// or missing InitializeForRendering.
+func (d *Document) RenderSearchResultRaw(query string) (buf []byte, pxW, pxH int, err error) {
+	unlock, gerr := d.guard()
+	if gerr != nil {
+		return nil, 0, 0, gerr
+	}
+	defer unlock()
+	if !d.tileModeReady {
+		return nil, 0, 0, &LOKError{Op: "RenderSearchResult", Detail: "InitializeForRendering not called"}
+	}
+	b, w, h, ok := d.office.be.DocumentRenderSearchResult(d.h, query)
+	if !ok {
+		return nil, 0, 0, nil
+	}
+	return b, w, h, nil
+}
+
+// RenderSearchResult is the *image.NRGBA convenience form of
+// RenderSearchResultRaw. Returns (nil, nil) when there's no match.
+// Unpremultiplies in place (dst==src aliasing contract) to avoid
+// a scratch buffer, same strategy as PaintTile.
+func (d *Document) RenderSearchResult(query string) (*image.NRGBA, error) {
+	buf, pxW, pxH, err := d.RenderSearchResultRaw(query)
+	if err != nil || buf == nil {
+		return nil, err
+	}
+	img := image.NewNRGBA(imageBoundsForTile(pxW, pxH))
+	copy(img.Pix, buf)
+	unpremultiplyBGRAToNRGBA(img.Pix, img.Pix, pxW, pxH)
+	return img, nil
+}
+
+// RenderShapeSelection returns LOK's bytes for the current shape
+// selection (SVG in practice on LO 24.8, but the binding does not
+// promise a format). Returns (nil, nil) when nothing is selected.
+func (d *Document) RenderShapeSelection() ([]byte, error) {
+	unlock, err := d.guard()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	if !d.tileModeReady {
+		return nil, &LOKError{Op: "RenderShapeSelection", Detail: "InitializeForRendering not called"}
+	}
+	return d.office.be.DocumentRenderShapeSelection(d.h), nil
+}
