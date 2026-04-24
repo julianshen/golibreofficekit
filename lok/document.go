@@ -45,13 +45,14 @@ func (t DocumentType) String() string {
 // once, but every method serialises on the parent Office's mutex
 // because LOK is not thread-safe.
 type Document struct {
-	office    *Office
-	h         documentHandle
-	origURL   string       // cached for Save()
-	docType   DocumentType // cached at Load to avoid a per-call backend round-trip
-	tempPath  string       // non-empty when created by LoadFromReader
-	closeOnce sync.Once
-	closed    bool
+	office        *Office
+	h             documentHandle
+	origURL       string       // cached for Save()
+	docType       DocumentType // cached at Load to avoid a per-call backend round-trip
+	tempPath      string       // non-empty when created by LoadFromReader
+	closeOnce     sync.Once
+	closed        bool
+	tileModeReady bool // set by InitializeForRendering after LOK_TILEMODE_BGRA is confirmed
 }
 
 // LoadOption configures Load / LoadFromReader.

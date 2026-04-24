@@ -44,6 +44,15 @@ type backend interface {
 	DocumentGetPartPageRectangles(d documentHandle) string
 	DocumentGetDocumentSize(d documentHandle) (int64, int64)
 	DocumentSetOutlineState(d documentHandle, column bool, level, index int, hidden bool)
+
+	DocumentInitializeForRendering(d documentHandle, args string)
+	DocumentGetTileMode(d documentHandle) int
+	DocumentSetClientZoom(d documentHandle, tilePxW, tilePxH, tileTwipW, tileTwipH int)
+	DocumentSetClientVisibleArea(d documentHandle, x, y, w, h int)
+	DocumentPaintTile(d documentHandle, buf []byte, pxW, pxH, x, y, w, h int)
+	DocumentPaintPartTile(d documentHandle, buf []byte, part, mode, pxW, pxH, x, y, w, h int)
+	DocumentRenderSearchResult(d documentHandle, query string) (buf []byte, pxW, pxH int, ok bool)
+	DocumentRenderShapeSelection(d documentHandle) []byte
 }
 
 // libraryHandle and officeHandle are opaque across the boundary.

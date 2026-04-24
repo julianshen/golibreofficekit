@@ -4,6 +4,7 @@ package lok
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -235,6 +236,83 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	}
 	if len(rects) == 0 {
 		t.Log("PartPageRectangles empty; LO may not compute rectangles for this doc type")
+	}
+
+	// Rendering round-trip on doc.
+
+	if err := doc.InitializeForRendering(""); err != nil {
+		t.Fatalf("InitializeForRendering: %v", err)
+	}
+	if err := doc.SetClientZoom(256, 256, 1440, 1440); err != nil {
+		t.Errorf("SetClientZoom: %v", err)
+	}
+	if err := doc.SetClientVisibleArea(TwipRect{X: 0, Y: 0, W: 14400, H: 14400}); err != nil {
+		t.Errorf("SetClientVisibleArea: %v", err)
+	}
+
+	// PaintTile: expect non-nil image; check some pixel was drawn so
+	// we know the path isn't silently returning an all-zero buffer.
+	img, err := doc.PaintTile(256, 256, TwipRect{X: 0, Y: 0, W: 14400, H: 14400})
+	if err != nil {
+		t.Fatalf("PaintTile: %v", err)
+	}
+	if img == nil {
+		t.Fatal("PaintTile returned nil image")
+	}
+	var nonZero int
+	for _, b := range img.Pix {
+		if b != 0 {
+			nonZero++
+		}
+	}
+	if nonZero == 0 {
+		t.Error("PaintTile buffer is entirely zero — nothing painted?")
+	}
+
+	// PaintTileRaw with correct buffer.
+	rawBuf := make([]byte, 4*256*256)
+	if err := doc.PaintTileRaw(rawBuf, 256, 256, TwipRect{X: 0, Y: 0, W: 14400, H: 14400}); err != nil {
+		t.Errorf("PaintTileRaw: %v", err)
+	}
+
+	// PaintTileRaw with wrong-size buffer must return *LOKError
+	// without invoking LOK.
+	if err := doc.PaintTileRaw(make([]byte, 10), 256, 256, TwipRect{}); err == nil {
+		t.Error("PaintTileRaw with wrong buffer size: want *LOKError, got nil")
+	} else {
+		var lokErr *LOKError
+		if !errors.As(err, &lokErr) {
+			t.Errorf("PaintTileRaw wrong-size: want *LOKError, got %T %v", err, err)
+		}
+	}
+
+	// PaintPartTile — only sensible when parts > 0. Writer returns 0.
+	if nParts > 0 {
+		if _, err := doc.PaintPartTile(0, 256, 256, TwipRect{X: 0, Y: 0, W: 14400, H: 14400}); err != nil {
+			t.Errorf("PaintPartTile(0): %v", err)
+		}
+	}
+
+	// RenderSearchResult: pass a plausible SearchItem payload; tolerate
+	// both outcomes — a zero-match result and a real hit are both legal.
+	searchQuery := `{"SearchItem.SearchString":{"type":"string","value":"LibreOffice"},` +
+		`"SearchItem.Backward":{"type":"boolean","value":"false"},` +
+		`"SearchItem.Command":{"type":"long","value":"0"}}`
+	sImg, err := doc.RenderSearchResult(searchQuery)
+	if err != nil {
+		t.Errorf("RenderSearchResult: %v", err)
+	}
+	if sImg == nil {
+		t.Log("RenderSearchResult: no match (acceptable — depends on fixture text)")
+	}
+
+	// RenderShapeSelection with no selection — expect (nil, nil).
+	shape, err := doc.RenderShapeSelection()
+	if err != nil {
+		t.Errorf("RenderShapeSelection: %v", err)
+	}
+	if shape != nil {
+		t.Logf("RenderShapeSelection returned %d bytes without a selection (LO may emit empty SVG envelope)", len(shape))
 	}
 
 	// LoadFromReader deliberately comes last. Loading a second
