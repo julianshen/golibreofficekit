@@ -7,7 +7,16 @@ package lokc
 */
 import "C"
 
-import "unsafe"
+import (
+	"errors"
+	"unsafe"
+)
+
+// ErrUnsupported is returned when the LOK function pointer for an
+// operation is NULL on the loaded LibreOffice build. realBackend
+// translates this into the public lok.ErrUnsupported sentinel via
+// errors.Is so callers don't depend on internal/lokc.
+var ErrUnsupported = errors.New("lokc: LOK vtable slot is NULL")
 
 // copyAndFree copies a C string into a Go string and frees the
 // original with free(3). Safe on nil input (returns "").

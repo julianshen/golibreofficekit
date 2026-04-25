@@ -101,6 +101,32 @@ type fakeBackend struct {
 	lastUnoCmd      string
 	lastUnoArgs     string
 	lastUnoNotify   bool
+
+	lastGetTextSelectionMime     string
+	lastSelectionTypeAndTextMime string
+	selectionText                string
+	selectionUsedMime            string
+	selectionKind                int
+	getTextSelectionErr          error
+	getSelectionTypeErr          error
+	selectionTypeTextErr         error
+	selectionSetterErr           error
+
+	lastSetTextSelectionTyp int
+	lastSetTextSelectionX   int
+	lastSetTextSelectionY   int
+	resetSelectionCalls     int
+	lastSetGraphicTyp       int
+	lastSetGraphicX         int
+	lastSetGraphicY         int
+	lastBlockedViewID       int
+	lastBlockedCSV          string
+
+	lastGetClipboardMimes []string
+	getClipboardResult    []clipboardItemInternal
+	getClipboardErr       error
+	lastSetClipboardItems []clipboardItemInternal
+	setClipboardErr       error
 }
 
 const fakeViewIDBase = 1000
@@ -543,4 +569,70 @@ func (f *fakeBackend) DocumentPostUnoCommand(_ documentHandle, cmd, args string,
 	f.lastUnoCmd = cmd
 	f.lastUnoArgs = args
 	f.lastUnoNotify = notify
+}
+
+func (f *fakeBackend) DocumentSetTextSelection(_ documentHandle, typ, x, y int) error {
+	f.lastSetTextSelectionTyp = typ
+	f.lastSetTextSelectionX = x
+	f.lastSetTextSelectionY = y
+	return f.selectionSetterErr
+}
+
+func (f *fakeBackend) DocumentResetSelection(documentHandle) error {
+	f.resetSelectionCalls++
+	return f.selectionSetterErr
+}
+
+func (f *fakeBackend) DocumentSetGraphicSelection(_ documentHandle, typ, x, y int) error {
+	f.lastSetGraphicTyp = typ
+	f.lastSetGraphicX = x
+	f.lastSetGraphicY = y
+	return f.selectionSetterErr
+}
+
+func (f *fakeBackend) DocumentSetBlockedCommandList(_ documentHandle, viewID int, csv string) error {
+	f.lastBlockedViewID = viewID
+	f.lastBlockedCSV = csv
+	return f.selectionSetterErr
+}
+func (f *fakeBackend) DocumentGetTextSelection(_ documentHandle, mime string) (string, string, error) {
+	f.lastGetTextSelectionMime = mime
+	if f.getTextSelectionErr != nil {
+		return "", "", f.getTextSelectionErr
+	}
+	return f.selectionText, f.selectionUsedMime, nil
+}
+
+func (f *fakeBackend) DocumentGetSelectionType(documentHandle) (int, error) {
+	if f.getSelectionTypeErr != nil {
+		return 0, f.getSelectionTypeErr
+	}
+	return f.selectionKind, nil
+}
+
+func (f *fakeBackend) DocumentGetSelectionTypeAndText(_ documentHandle, mime string) (int, string, string, error) {
+	f.lastSelectionTypeAndTextMime = mime
+	if f.selectionTypeTextErr != nil {
+		return -1, "", "", f.selectionTypeTextErr
+	}
+	return f.selectionKind, f.selectionText, f.selectionUsedMime, nil
+}
+func (f *fakeBackend) DocumentGetClipboard(_ documentHandle, mimes []string) ([]clipboardItemInternal, error) {
+	// Record a copy so test mutations don't race with the fake.
+	if mimes != nil {
+		f.lastGetClipboardMimes = append([]string(nil), mimes...)
+	} else {
+		f.lastGetClipboardMimes = nil
+	}
+	if f.getClipboardErr != nil {
+		return nil, f.getClipboardErr
+	}
+	out := make([]clipboardItemInternal, len(f.getClipboardResult))
+	copy(out, f.getClipboardResult)
+	return out, nil
+}
+
+func (f *fakeBackend) DocumentSetClipboard(_ documentHandle, items []clipboardItemInternal) error {
+	f.lastSetClipboardItems = append([]clipboardItemInternal(nil), items...)
+	return f.setClipboardErr
 }

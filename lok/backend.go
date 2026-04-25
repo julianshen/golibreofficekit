@@ -57,6 +57,26 @@ type backend interface {
 	DocumentPostKeyEvent(d documentHandle, typ, charCode, keyCode int)
 	DocumentPostMouseEvent(d documentHandle, typ, x, y, count, buttons, mods int)
 	DocumentPostUnoCommand(d documentHandle, cmd, args string, notifyWhenFinished bool)
+
+	DocumentSetTextSelection(d documentHandle, typ, x, y int) error
+	DocumentResetSelection(d documentHandle) error
+	DocumentSetGraphicSelection(d documentHandle, typ, x, y int) error
+	DocumentSetBlockedCommandList(d documentHandle, viewID int, csv string) error
+	DocumentGetTextSelection(d documentHandle, mimeType string) (text, usedMime string, err error)
+	DocumentGetSelectionType(d documentHandle) (int, error)
+	DocumentGetSelectionTypeAndText(d documentHandle, mimeType string) (kind int, text, usedMime string, err error)
+
+	DocumentGetClipboard(d documentHandle, mimeTypes []string) (items []clipboardItemInternal, err error)
+	DocumentSetClipboard(d documentHandle, items []clipboardItemInternal) error
+}
+
+// clipboardItemInternal mirrors the public lok.ClipboardItem (and
+// lokc.ClipboardItem) at the backend-interface seam. The indirection
+// lets the interface stay free of the internal/lokc import while the
+// public type remains defined in lok/clipboard.go.
+type clipboardItemInternal struct {
+	MimeType string
+	Data     []byte
 }
 
 // libraryHandle and officeHandle are opaque across the boundary.

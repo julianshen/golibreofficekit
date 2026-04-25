@@ -2,7 +2,11 @@
 
 package lok
 
-import "github.com/julianshen/golibreofficekit/internal/lokc"
+import (
+	"errors"
+
+	"github.com/julianshen/golibreofficekit/internal/lokc"
+)
 
 // realBackend wires into internal/lokc. It holds no state; the package
 // uses a single instance (set by New) so tests can replace it via
@@ -216,6 +220,63 @@ func (realBackend) DocumentPostMouseEvent(d documentHandle, typ, x, y, count, bu
 func (realBackend) DocumentPostUnoCommand(d documentHandle, cmd, args string, notifyWhenFinished bool) {
 	lokc.DocumentPostUnoCommand(mustDoc(d).d, cmd, args, notifyWhenFinished)
 }
+
+// mapLokErr translates internal lokc sentinels to their public lok
+// counterparts. New realBackend forwarders that surface a lokc error
+// should pipe through here so the translation stays in one place.
+func mapLokErr(err error) error {
+	if errors.Is(err, lokc.ErrUnsupported) {
+		return ErrUnsupported
+	}
+	return err
+}
+
+func (realBackend) DocumentSetTextSelection(d documentHandle, typ, x, y int) error {
+	return mapLokErr(lokc.DocumentSetTextSelection(mustDoc(d).d, typ, x, y))
+}
+func (realBackend) DocumentResetSelection(d documentHandle) error {
+	return mapLokErr(lokc.DocumentResetSelection(mustDoc(d).d))
+}
+func (realBackend) DocumentSetGraphicSelection(d documentHandle, typ, x, y int) error {
+	return mapLokErr(lokc.DocumentSetGraphicSelection(mustDoc(d).d, typ, x, y))
+}
+func (realBackend) DocumentSetBlockedCommandList(d documentHandle, viewID int, csv string) error {
+	return mapLokErr(lokc.DocumentSetBlockedCommandList(mustDoc(d).d, viewID, csv))
+}
+func (realBackend) DocumentGetTextSelection(d documentHandle, mimeType string) (string, string, error) {
+	text, mime, err := lokc.DocumentGetTextSelection(mustDoc(d).d, mimeType)
+	return text, mime, mapLokErr(err)
+}
+func (realBackend) DocumentGetSelectionType(d documentHandle) (int, error) {
+	v, err := lokc.DocumentGetSelectionType(mustDoc(d).d)
+	return v, mapLokErr(err)
+}
+func (realBackend) DocumentGetSelectionTypeAndText(d documentHandle, mimeType string) (int, string, string, error) {
+	kind, text, mime, err := lokc.DocumentGetSelectionTypeAndText(mustDoc(d).d, mimeType)
+	return kind, text, mime, mapLokErr(err)
+}
+
+func (realBackend) DocumentGetClipboard(d documentHandle, mimeTypes []string) ([]clipboardItemInternal, error) {
+	items, err := lokc.DocumentGetClipboard(mustDoc(d).d, mimeTypes)
+	if err != nil {
+		return nil, mapLokErr(err)
+	}
+	out := make([]clipboardItemInternal, len(items))
+	for i, it := range items {
+		out[i] = clipboardItemInternal{MimeType: it.MimeType, Data: it.Data}
+	}
+	return out, nil
+}
+
+func (realBackend) DocumentSetClipboard(d documentHandle, items []clipboardItemInternal) error {
+	lokItems := make([]lokc.ClipboardItem, len(items))
+	for i, it := range items {
+		lokItems[i] = lokc.ClipboardItem{MimeType: it.MimeType, Data: it.Data}
+	}
+	return mapLokErr(lokc.DocumentSetClipboard(mustDoc(d).d, lokItems))
+}
+
+var _ backend = realBackend{}
 
 func init() {
 	setBackend(realBackend{})
