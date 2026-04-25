@@ -276,6 +276,13 @@ func (realBackend) DocumentSetClipboard(d documentHandle, items []clipboardItemI
 	return mapLokErr(lokc.DocumentSetClipboard(mustDoc(d).d, lokItems))
 }
 
+func (realBackend) RegisterOfficeCallback(h officeHandle, handle uintptr) error {
+	return mapLokErr(lokc.RegisterOfficeCallback(must(h).h, lokc.DispatchHandleFromUintptr(handle)))
+}
+func (realBackend) RegisterDocumentCallback(d documentHandle, handle uintptr) error {
+	return mapLokErr(lokc.RegisterDocumentCallback(mustDoc(d).d, lokc.DispatchHandleFromUintptr(handle)))
+}
+
 var _ backend = realBackend{}
 
 func init() {

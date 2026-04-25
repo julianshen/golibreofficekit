@@ -351,3 +351,15 @@ func TestRealBackend_ClipboardForwarding(t *testing.T) {
 		t.Errorf("SetClipboard([items]): err=%v, want ErrUnsupported", err)
 	}
 }
+
+func TestRealBackend_RegisterCallbackForwarding(t *testing.T) {
+	rb := realBackend{}
+	fakeDocHandle := lokc.NewFakeDocumentHandle()
+	defer lokc.FreeFakeDocumentHandle(fakeDocHandle)
+	rdoc := realDocumentHandle{d: fakeDocHandle}
+
+	// On a NULL-pClass document the slot is "missing" → ErrUnsupported.
+	if err := rb.RegisterDocumentCallback(rdoc, 1); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("RegisterDocumentCallback on NULL pClass: err=%v, want ErrUnsupported", err)
+	}
+}

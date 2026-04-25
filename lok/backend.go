@@ -68,6 +68,9 @@ type backend interface {
 
 	DocumentGetClipboard(d documentHandle, mimeTypes []string) (items []clipboardItemInternal, err error)
 	DocumentSetClipboard(d documentHandle, items []clipboardItemInternal) error
+
+	RegisterOfficeCallback(h officeHandle, handle uintptr) error
+	RegisterDocumentCallback(d documentHandle, handle uintptr) error
 }
 
 // clipboardItemInternal mirrors the public lok.ClipboardItem (and
