@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/julianshen/golibreofficekit/internal/lokc"
 )
 
 // DocumentType mirrors LOK_DOCTYPE_* from LibreOfficeKitEnums.h.
@@ -53,6 +55,8 @@ type Document struct {
 	closeOnce     sync.Once
 	closed        bool
 	tileModeReady bool // set by InitializeForRendering after LOK_TILEMODE_BGRA is confirmed
+	listeners     *listenerSet
+	listenerH     uintptr
 }
 
 // LoadOption configures Load / LoadFromReader.
@@ -186,12 +190,21 @@ func (o *Office) Load(path string, opts ...LoadOption) (*Document, error) {
 		return nil, err
 	}
 
-	return &Document{
+	d := &Document{
 		office:  o,
 		h:       h,
 		origURL: fileURL,
 		docType: DocumentType(o.be.DocumentGetType(h)),
-	}, nil
+	}
+	d.listeners = newListenerSet()
+	d.listenerH = lokc.RegisterDispatcherUintptr(d.listeners)
+	if regErr := o.be.RegisterDocumentCallback(d.h, d.listenerH); regErr != nil {
+		lokc.UnregisterDispatcherUintptr(d.listenerH)
+		d.listeners.close()
+		o.be.DocumentDestroy(d.h)
+		return nil, &LOKError{Op: "RegisterDocumentCallback", Detail: regErr.Error(), err: regErr}
+	}
+	return d, nil
 }
 
 // composeLoadOptions turns the typed LoadOption values into the raw
@@ -234,6 +247,10 @@ func (d *Document) Close() error {
 	d.closeOnce.Do(func() {
 		d.office.mu.Lock()
 		defer d.office.mu.Unlock()
+		if d.listeners != nil {
+			lokc.UnregisterDispatcherUintptr(d.listenerH)
+			d.listeners.close()
+		}
 		d.office.be.DocumentDestroy(d.h)
 		d.closed = true
 		if d.tempPath != "" {
@@ -241,6 +258,31 @@ func (d *Document) Close() error {
 		}
 	})
 	return nil
+}
+
+// AddListener registers cb to receive document-level events. Returns
+// ErrClosed if the document has been closed; ErrInvalidOption (wrapped
+// in *LOKError) if cb is nil.
+func (d *Document) AddListener(cb func(Event)) (cancel func(), err error) {
+	d.office.mu.Lock()
+	defer d.office.mu.Unlock()
+	if d.closed {
+		return nil, ErrClosed
+	}
+	c, addErr := d.listeners.addChecked(cb)
+	if addErr != nil {
+		return nil, &LOKError{Op: "AddListener", Detail: addErr.Error(), err: ErrInvalidOption}
+	}
+	return c, nil
+}
+
+// DroppedEvents returns the cumulative count of document-level events
+// the dispatcher dropped because the buffer was full.
+func (d *Document) DroppedEvents() uint64 {
+	if d.listeners == nil {
+		return 0
+	}
+	return d.listeners.Dropped()
 }
 
 // Type returns the document's LOK type. The value is cached at Load

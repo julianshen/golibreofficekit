@@ -233,4 +233,84 @@ func TestOffice_DroppedEvents_StartsAtZero(t *testing.T) {
 	}
 }
 
+func dispatchDocumentFromFake(t *testing.T, fb *fakeBackend) *listenerSet {
+	t.Helper()
+	if fb.lastDocumentCallbackHandle == 0 {
+		t.Fatalf("fakeBackend never received RegisterDocumentCallback")
+	}
+	d := lokc.LookupDispatcherForTest(fb.lastDocumentCallbackHandle)
+	if d == nil {
+		t.Fatalf("no dispatcher registered under handle %d", fb.lastDocumentCallbackHandle)
+	}
+	ls, ok := d.(*listenerSet)
+	if !ok {
+		t.Fatalf("dispatcher is %T, not *listenerSet", d)
+	}
+	return ls
+}
+
+func TestDocument_AddListener_DeliversEvent(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	got := make(chan Event, 1)
+	cancel, err := doc.AddListener(func(e Event) {
+		select {
+		case got <- e:
+		default:
+		}
+	})
+	if err != nil {
+		t.Fatalf("AddListener: %v", err)
+	}
+	defer cancel()
+
+	dispatchDocumentFromFake(t, fb).Dispatch(int(EventTypeTextSelection), []byte("0,0,100,20"))
+	select {
+	case e := <-got:
+		if e.Type != EventTypeTextSelection || string(e.Payload) != "0,0,100,20" {
+			t.Errorf("got %+v", e)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("listener never received event")
+	}
+}
+
+func TestDocument_AddListener_AfterCloseErrors(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	doc.Close()
+	if _, err := doc.AddListener(func(Event) {}); !errors.Is(err, ErrClosed) {
+		t.Errorf("want ErrClosed, got %v", err)
+	}
+}
+
+func TestDocument_AddListener_NilCallback(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+	if _, err := doc.AddListener(nil); !errors.Is(err, ErrInvalidOption) {
+		t.Errorf("want ErrInvalidOption, got %v", err)
+	}
+}
+
+func TestDocument_DroppedEvents_StartsAtZero(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+	if got := doc.DroppedEvents(); got != 0 {
+		t.Errorf("DroppedEvents()=%d, want 0", got)
+	}
+}
+
 var _ = sync.Mutex{}
