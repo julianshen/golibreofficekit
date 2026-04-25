@@ -108,3 +108,15 @@ func TestOfficeWrappers_NilHandleAreNoOps(t *testing.T) {
 	OfficeTrimMemory(h, 0)
 	OfficeDestroy(h) // must not panic
 }
+
+// TestOfficeDestroy_ValidHandle exercises the non-nil branch of
+// OfficeDestroy. We calloc a fake LOK (pClass==NULL) so go_office_destroy's
+// C-side guard returns immediately without invoking any vtable slot.
+// Because pClass==NULL means go_office_destroy does NOT free h.p, we
+// must free the allocation manually after the call to avoid a leak.
+func TestOfficeDestroy_ValidHandle(t *testing.T) {
+	h := NewFakeOfficeHandle()
+	OfficeDestroy(h) // exercises the valid-handle branch; C no-op (pClass==NULL)
+	// go_office_destroy left h.p alive (pClass guard); free it now.
+	FreeFakeOfficeHandle(h)
+}

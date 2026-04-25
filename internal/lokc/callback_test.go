@@ -184,6 +184,38 @@ func TestGoLOKDispatch_LongPayloadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDispatchHandleUintptrRoundTrip(t *testing.T) {
+	d := &fakeDispatcher{}
+	h := RegisterDispatcher(d)
+	t.Cleanup(func() { UnregisterDispatcher(h) })
+
+	u := UintptrFromDispatchHandle(h)
+	if u == 0 {
+		t.Fatal("UintptrFromDispatchHandle: got 0, want non-zero")
+	}
+	if DispatchHandleFromUintptr(u) != h {
+		t.Errorf("DispatchHandleFromUintptr(%d) = %d, want %d", u, DispatchHandleFromUintptr(u), h)
+	}
+}
+
+func TestRegisterDispatcherUintptr_RoundTrip(t *testing.T) {
+	d := &fakeDispatcher{}
+	u := RegisterDispatcherUintptr(d)
+	if u == 0 {
+		t.Fatal("RegisterDispatcherUintptr: got 0, want non-zero")
+	}
+
+	got := LookupDispatcherForTest(u)
+	if got != Dispatcher(d) {
+		t.Errorf("LookupDispatcherForTest(%d) = %v, want %v", u, got, d)
+	}
+
+	UnregisterDispatcherUintptr(u)
+	if after := LookupDispatcherForTest(u); after != nil {
+		t.Errorf("after UnregisterDispatcherUintptr: LookupDispatcherForTest(%d) = %v, want nil", u, after)
+	}
+}
+
 func TestRegisterOfficeCallback_NilSafe(t *testing.T) {
 	// Without an OfficeHandle helper we can only test the invalid
 	// path here. The success path is covered by realBackend tests

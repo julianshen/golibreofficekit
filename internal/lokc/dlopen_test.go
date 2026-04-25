@@ -80,3 +80,21 @@ func TestDLSym_MissingSymbolErrors(t *testing.T) {
 		t.Fatal("expected error for missing symbol")
 	}
 }
+
+func TestLastDLError_NoErrorReturnsPlaceholder(t *testing.T) {
+	// After a successful dlopen/dlsym, dlerror() returns NULL.
+	// Calling lastDLError when there is no pending error must
+	// return the "(no dlerror)" placeholder, not an empty string.
+	handle, err := dlOpen("")
+	if err != nil {
+		t.Skip("cannot open main program:", err)
+	}
+	if _, err = dlSym(handle, "malloc"); err != nil {
+		t.Skip("cannot find malloc:", err)
+	}
+	// dlerror() is now NULL — lastDLError should hit the cs==nil branch.
+	got := lastDLError()
+	if got != "(no dlerror)" {
+		t.Errorf("lastDLError()=%q, want %q", got, "(no dlerror)")
+	}
+}
