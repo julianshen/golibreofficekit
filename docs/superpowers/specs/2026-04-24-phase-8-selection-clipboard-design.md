@@ -42,7 +42,7 @@ Out of scope (deferred to later phases):
 
 The binding stays layered exactly as in Phases 3–7:
 
-```
+```text
 lok (public)                  — typed API, close-state, validation
   └─ backend interface        — seam; fakeBackend for unit tests
       └─ realBackend          — forwards to lokc
@@ -192,7 +192,7 @@ func (*Document) SetClipboard(items []ClipboardItem) error
 
 ### 4.1 `GetClipboard`
 
-```
+```text
 lok.Document.GetClipboard(mimeTypes)
   ├─ d.mu.Lock(); defer unlock
   ├─ guard: d.closed → ErrClosed

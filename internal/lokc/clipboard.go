@@ -177,10 +177,7 @@ func DocumentSetClipboard(d DocumentHandle, items []ClipboardItem) error {
 		}
 	}
 
-	ok := C.go_doc_set_clipboard(d.p, C.size_t(n),
-		(**C.char)(unsafe.Pointer(cMimes)),
-		cSizes,
-		(**C.char)(unsafe.Pointer(cStreams)))
+	ok := C.go_doc_set_clipboard(d.p, C.size_t(n), cMimes, cSizes, cStreams)
 	switch ok {
 	case -1:
 		return ErrUnsupported

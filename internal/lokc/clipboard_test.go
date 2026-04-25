@@ -6,7 +6,7 @@ import "testing"
 
 func TestDocumentGetClipboard_NilSafe(t *testing.T) {
 	items, err := DocumentGetClipboard(DocumentHandle{}, nil)
-	if err == nil || err != ErrUnsupported {
+	if err != ErrUnsupported {
 		t.Errorf("zero handle: err=%v, want ErrUnsupported", err)
 	}
 	if items != nil {

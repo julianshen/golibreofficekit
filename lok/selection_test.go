@@ -257,6 +257,23 @@ func TestGetSelectionKind_UnknownRawPassthrough(t *testing.T) {
 	}
 }
 
+func TestSetBlockedCommandList_NULInCSV(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	err := doc.SetBlockedCommandList(0, ".uno:Save\x00.uno:SaveAs")
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) || lokErr.Op != "SetBlockedCommandList" {
+		t.Errorf("want *LOKError Op=SetBlockedCommandList, got %T %v", err, err)
+	}
+	if !errors.Is(err, ErrInvalidOption) {
+		t.Errorf("want ErrInvalidOption via Unwrap, got %v", err)
+	}
+}
+
 func TestSetBlockedCommandList_ViewIDRangeRejection(t *testing.T) {
 	withFakeBackend(t, &fakeBackend{})
 	o, _ := New("/install")
@@ -296,7 +313,7 @@ func TestSetTextSelection_ForwardsArgs(t *testing.T) {
 	if err := doc.SetTextSelection(SetTextSelectionEnd, 1000, 2000); err != nil {
 		t.Fatal(err)
 	}
-	if fb.lastSetTextSelectionTyp != 1 || fb.lastSetTextSelectionX != 1000 || fb.lastSetTextSelectionY != 2000 {
+	if fb.lastSetTextSelectionTyp != int(SetTextSelectionEnd) || fb.lastSetTextSelectionX != 1000 || fb.lastSetTextSelectionY != 2000 {
 		t.Errorf("recorded (%d, %d, %d)", fb.lastSetTextSelectionTyp, fb.lastSetTextSelectionX, fb.lastSetTextSelectionY)
 	}
 }
@@ -365,7 +382,7 @@ func TestSetGraphicSelection_ForwardsArgs(t *testing.T) {
 	if err := doc.SetGraphicSelection(SetGraphicSelectionEnd, 10, 20); err != nil {
 		t.Fatal(err)
 	}
-	if fb.lastSetGraphicTyp != 1 || fb.lastSetGraphicX != 10 || fb.lastSetGraphicY != 20 {
+	if fb.lastSetGraphicTyp != int(SetGraphicSelectionEnd) || fb.lastSetGraphicX != 10 || fb.lastSetGraphicY != 20 {
 		t.Errorf("recorded (%d, %d, %d)", fb.lastSetGraphicTyp, fb.lastSetGraphicX, fb.lastSetGraphicY)
 	}
 }
