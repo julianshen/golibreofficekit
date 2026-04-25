@@ -20,11 +20,11 @@ const (
 	EventTypeGraphicSelection        EventType = 6  // LOK_CALLBACK_GRAPHIC_SELECTION
 	EventTypeHyperlinkClicked        EventType = 7  // LOK_CALLBACK_HYPERLINK_CLICKED
 	EventTypeStateChanged            EventType = 8  // LOK_CALLBACK_STATE_CHANGED
-	EventTypeMousePointer            EventType = 12 // LOK_CALLBACK_MOUSE_POINTER
-	EventTypeUNOCommandResult        EventType = 13 // LOK_CALLBACK_UNO_COMMAND_RESULT
-	EventTypeDocumentSizeChanged     EventType = 17 // LOK_CALLBACK_DOCUMENT_SIZE_CHANGED
-	EventTypeSetPart                 EventType = 18 // LOK_CALLBACK_SET_PART
-	EventTypeError                   EventType = 20 // LOK_CALLBACK_ERROR
+	EventTypeDocumentSizeChanged     EventType = 13 // LOK_CALLBACK_DOCUMENT_SIZE_CHANGED
+	EventTypeSetPart                 EventType = 14 // LOK_CALLBACK_SET_PART
+	EventTypeUNOCommandResult        EventType = 16 // LOK_CALLBACK_UNO_COMMAND_RESULT
+	EventTypeMousePointer            EventType = 18 // LOK_CALLBACK_MOUSE_POINTER
+	EventTypeError                   EventType = 22 // LOK_CALLBACK_ERROR
 	EventTypeWindow                  EventType = 36 // LOK_CALLBACK_WINDOW
 )
 
