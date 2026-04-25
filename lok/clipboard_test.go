@@ -9,8 +9,6 @@ import (
 )
 
 func TestClipboardItem_ShapeCompiles(t *testing.T) {
-	// Compile-time assertion: ClipboardItem has MimeType and Data
-	// fields with the documented types.
 	it := ClipboardItem{MimeType: "text/plain", Data: []byte("hi")}
 	if it.MimeType != "text/plain" || !bytes.Equal(it.Data, []byte("hi")) {
 		t.Errorf("ClipboardItem round-trip failed: %+v", it)
@@ -150,6 +148,23 @@ func TestSetClipboard_EmptySliceAllowed(t *testing.T) {
 	}
 	if err := doc.SetClipboard([]ClipboardItem{}); err != nil {
 		t.Fatalf("empty items: %v", err)
+	}
+}
+
+func TestSetClipboard_NilDataItemForwarded(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	items := []ClipboardItem{{MimeType: "text/plain", Data: nil}}
+	if err := doc.SetClipboard(items); err != nil {
+		t.Fatalf("nil-data item: %v", err)
+	}
+	if len(fb.lastSetClipboardItems) != 1 || fb.lastSetClipboardItems[0].Data != nil {
+		t.Errorf("recorded %+v; want a single item with nil Data", fb.lastSetClipboardItems)
 	}
 }
 

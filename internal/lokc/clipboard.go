@@ -48,6 +48,10 @@ static char*  go_doc_clipboard_mime(char** mimes, size_t i)     { return mimes[i
 static size_t go_doc_clipboard_size(size_t* sizes, size_t i)    { return sizes[i]; }
 static char*  go_doc_clipboard_stream(char** streams, size_t i) { return streams[i]; }
 
+// go_doc_set_clipboard mirrors go_doc_get_clipboard's return contract:
+//   -1 when the vtable slot is NULL (unsupported)
+//    0 when LOK reported failure
+//    1 on success
 static int go_doc_set_clipboard(LibreOfficeKitDocument* d,
                                 size_t count,
                                 const char** mimes,

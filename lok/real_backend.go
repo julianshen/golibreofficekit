@@ -221,39 +221,45 @@ func (realBackend) DocumentPostUnoCommand(d documentHandle, cmd, args string, no
 	lokc.DocumentPostUnoCommand(mustDoc(d).d, cmd, args, notifyWhenFinished)
 }
 
-func (realBackend) DocumentSetTextSelection(d documentHandle, typ, x, y int) {
-	lokc.DocumentSetTextSelection(mustDoc(d).d, typ, x, y)
+// mapLokErr translates internal lokc sentinels to their public lok
+// counterparts. New realBackend forwarders that surface a lokc error
+// should pipe through here so the translation stays in one place.
+func mapLokErr(err error) error {
+	if errors.Is(err, lokc.ErrUnsupported) {
+		return ErrUnsupported
+	}
+	return err
 }
-func (realBackend) DocumentResetSelection(d documentHandle) {
-	lokc.DocumentResetSelection(mustDoc(d).d)
+
+func (realBackend) DocumentSetTextSelection(d documentHandle, typ, x, y int) error {
+	return mapLokErr(lokc.DocumentSetTextSelection(mustDoc(d).d, typ, x, y))
 }
-func (realBackend) DocumentSetGraphicSelection(d documentHandle, typ, x, y int) {
-	lokc.DocumentSetGraphicSelection(mustDoc(d).d, typ, x, y)
+func (realBackend) DocumentResetSelection(d documentHandle) error {
+	return mapLokErr(lokc.DocumentResetSelection(mustDoc(d).d))
 }
-func (realBackend) DocumentSetBlockedCommandList(d documentHandle, viewID int, csv string) {
-	lokc.DocumentSetBlockedCommandList(mustDoc(d).d, viewID, csv)
+func (realBackend) DocumentSetGraphicSelection(d documentHandle, typ, x, y int) error {
+	return mapLokErr(lokc.DocumentSetGraphicSelection(mustDoc(d).d, typ, x, y))
 }
-func (realBackend) DocumentGetTextSelection(d documentHandle, mimeType string) (string, string) {
-	return lokc.DocumentGetTextSelection(mustDoc(d).d, mimeType)
+func (realBackend) DocumentSetBlockedCommandList(d documentHandle, viewID int, csv string) error {
+	return mapLokErr(lokc.DocumentSetBlockedCommandList(mustDoc(d).d, viewID, csv))
 }
-func (realBackend) DocumentGetSelectionType(d documentHandle) int {
-	return lokc.DocumentGetSelectionType(mustDoc(d).d)
+func (realBackend) DocumentGetTextSelection(d documentHandle, mimeType string) (string, string, error) {
+	text, mime, err := lokc.DocumentGetTextSelection(mustDoc(d).d, mimeType)
+	return text, mime, mapLokErr(err)
+}
+func (realBackend) DocumentGetSelectionType(d documentHandle) (int, error) {
+	v, err := lokc.DocumentGetSelectionType(mustDoc(d).d)
+	return v, mapLokErr(err)
 }
 func (realBackend) DocumentGetSelectionTypeAndText(d documentHandle, mimeType string) (int, string, string, error) {
 	kind, text, mime, err := lokc.DocumentGetSelectionTypeAndText(mustDoc(d).d, mimeType)
-	if errors.Is(err, lokc.ErrUnsupported) {
-		return -1, "", "", ErrUnsupported
-	}
-	return kind, text, mime, err
+	return kind, text, mime, mapLokErr(err)
 }
 
 func (realBackend) DocumentGetClipboard(d documentHandle, mimeTypes []string) ([]clipboardItemInternal, error) {
 	items, err := lokc.DocumentGetClipboard(mustDoc(d).d, mimeTypes)
-	if errors.Is(err, lokc.ErrUnsupported) {
-		return nil, ErrUnsupported
-	}
 	if err != nil {
-		return nil, err
+		return nil, mapLokErr(err)
 	}
 	out := make([]clipboardItemInternal, len(items))
 	for i, it := range items {
@@ -267,11 +273,7 @@ func (realBackend) DocumentSetClipboard(d documentHandle, items []clipboardItemI
 	for i, it := range items {
 		lokItems[i] = lokc.ClipboardItem{MimeType: it.MimeType, Data: it.Data}
 	}
-	err := lokc.DocumentSetClipboard(mustDoc(d).d, lokItems)
-	if errors.Is(err, lokc.ErrUnsupported) {
-		return ErrUnsupported
-	}
-	return err
+	return mapLokErr(lokc.DocumentSetClipboard(mustDoc(d).d, lokItems))
 }
 
 var _ backend = realBackend{}

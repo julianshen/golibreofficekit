@@ -188,6 +188,103 @@ func TestGetSelectionTypeAndText_UnsupportedBubbles(t *testing.T) {
 	}
 }
 
+func TestGetSelectionTypeAndText_InvalidMime(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	cases := []struct {
+		name string
+		mime string
+	}{
+		{"empty", ""},
+		{"nul", "text/plain\x00"},
+		{"too-long", string(make([]byte, 257))},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, _, _, err := doc.GetSelectionTypeAndText(tc.mime); !errors.Is(err, ErrInvalidOption) {
+				t.Errorf("mime=%q: want ErrInvalidOption, got %v", tc.mime, err)
+			}
+		})
+	}
+}
+
+func TestGetTextSelection_UnsupportedBubbles(t *testing.T) {
+	fb := &fakeBackend{getTextSelectionErr: ErrUnsupported}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	if _, _, err := doc.GetTextSelection("text/plain"); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("want ErrUnsupported, got %v", err)
+	}
+}
+
+func TestGetSelectionKind_UnsupportedBubbles(t *testing.T) {
+	fb := &fakeBackend{getSelectionTypeErr: ErrUnsupported}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	if _, err := doc.GetSelectionKind(); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("want ErrUnsupported, got %v", err)
+	}
+}
+
+func TestGetSelectionKind_UnknownRawPassthrough(t *testing.T) {
+	// Values outside LOK_SELTYPE_* survive as SelectionKind(v) so
+	// callers can log unexpected values rather than silently coerce.
+	fb := &fakeBackend{selectionKind: 99}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	got, err := doc.GetSelectionKind()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != SelectionKind(99) {
+		t.Errorf("got %v, want SelectionKind(99)", got)
+	}
+}
+
+func TestSetBlockedCommandList_ViewIDRangeRejection(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	cases := []struct {
+		name   string
+		viewID int
+	}{
+		{"over", math.MaxInt32 + 1},
+		{"under", math.MinInt32 - 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := doc.SetBlockedCommandList(tc.viewID, ".uno:Save")
+			var lokErr *LOKError
+			if !errors.As(err, &lokErr) || lokErr.Op != "SetBlockedCommandList" {
+				t.Errorf("want *LOKError Op=SetBlockedCommandList, got %T %v", err, err)
+			}
+			if !errors.Is(err, ErrInvalidOption) {
+				t.Errorf("want ErrInvalidOption via Unwrap, got %v", err)
+			}
+		})
+	}
+}
+
 func TestSetTextSelection_ForwardsArgs(t *testing.T) {
 	fb := &fakeBackend{}
 	withFakeBackend(t, fb)

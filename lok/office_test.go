@@ -107,7 +107,10 @@ type fakeBackend struct {
 	selectionText                string
 	selectionUsedMime            string
 	selectionKind                int
+	getTextSelectionErr          error
+	getSelectionTypeErr          error
 	selectionTypeTextErr         error
+	selectionSetterErr           error
 
 	lastSetTextSelectionTyp int
 	lastSetTextSelectionX   int
@@ -568,35 +571,43 @@ func (f *fakeBackend) DocumentPostUnoCommand(_ documentHandle, cmd, args string,
 	f.lastUnoNotify = notify
 }
 
-// --- Selection setters (Phase 8 Task 11) — real fake implementations. ---
-
-func (f *fakeBackend) DocumentSetTextSelection(_ documentHandle, typ, x, y int) {
+func (f *fakeBackend) DocumentSetTextSelection(_ documentHandle, typ, x, y int) error {
 	f.lastSetTextSelectionTyp = typ
 	f.lastSetTextSelectionX = x
 	f.lastSetTextSelectionY = y
+	return f.selectionSetterErr
 }
 
-func (f *fakeBackend) DocumentResetSelection(documentHandle) {
+func (f *fakeBackend) DocumentResetSelection(documentHandle) error {
 	f.resetSelectionCalls++
+	return f.selectionSetterErr
 }
 
-func (f *fakeBackend) DocumentSetGraphicSelection(_ documentHandle, typ, x, y int) {
+func (f *fakeBackend) DocumentSetGraphicSelection(_ documentHandle, typ, x, y int) error {
 	f.lastSetGraphicTyp = typ
 	f.lastSetGraphicX = x
 	f.lastSetGraphicY = y
+	return f.selectionSetterErr
 }
 
-func (f *fakeBackend) DocumentSetBlockedCommandList(_ documentHandle, viewID int, csv string) {
+func (f *fakeBackend) DocumentSetBlockedCommandList(_ documentHandle, viewID int, csv string) error {
 	f.lastBlockedViewID = viewID
 	f.lastBlockedCSV = csv
+	return f.selectionSetterErr
 }
-func (f *fakeBackend) DocumentGetTextSelection(_ documentHandle, mime string) (string, string) {
+func (f *fakeBackend) DocumentGetTextSelection(_ documentHandle, mime string) (string, string, error) {
 	f.lastGetTextSelectionMime = mime
-	return f.selectionText, f.selectionUsedMime
+	if f.getTextSelectionErr != nil {
+		return "", "", f.getTextSelectionErr
+	}
+	return f.selectionText, f.selectionUsedMime, nil
 }
 
-func (f *fakeBackend) DocumentGetSelectionType(documentHandle) int {
-	return f.selectionKind
+func (f *fakeBackend) DocumentGetSelectionType(documentHandle) (int, error) {
+	if f.getSelectionTypeErr != nil {
+		return 0, f.getSelectionTypeErr
+	}
+	return f.selectionKind, nil
 }
 
 func (f *fakeBackend) DocumentGetSelectionTypeAndText(_ documentHandle, mime string) (int, string, string, error) {

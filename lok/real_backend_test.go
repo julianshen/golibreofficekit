@@ -289,17 +289,29 @@ func TestRealBackend_SelectionForwarding(t *testing.T) {
 	defer lokc.FreeFakeDocumentHandle(fakeDocHandle)
 	rdoc := realDocumentHandle{d: fakeDocHandle}
 
-	rb.DocumentSetTextSelection(rdoc, int(SetTextSelectionStart), 10, 20)
-	rb.DocumentSetGraphicSelection(rdoc, int(SetGraphicSelectionEnd), 10, 20)
-	rb.DocumentSetBlockedCommandList(rdoc, 0, ".uno:Save")
-	rb.DocumentResetSelection(rdoc)
-
-	// getters on a NULL-pClass handle return empty / -1 / Unsupported.
-	if text, mime := rb.DocumentGetTextSelection(rdoc, "text/plain"); text != "" || mime != "" {
-		t.Errorf("GetTextSelection on NULL pClass: got (%q, %q), want empty", text, mime)
+	// All four setters surface ErrUnsupported on a NULL-pClass handle
+	// (the lokc layer maps the void slot to -> ok=0 -> ErrUnsupported,
+	// and realBackend translates lokc.ErrUnsupported -> lok.ErrUnsupported).
+	if err := rb.DocumentSetTextSelection(rdoc, int(SetTextSelectionStart), 10, 20); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("SetTextSelection on NULL pClass: err=%v, want ErrUnsupported", err)
 	}
-	if k := rb.DocumentGetSelectionType(rdoc); k != -1 {
-		t.Errorf("GetSelectionType on NULL pClass: got %d, want -1", k)
+	if err := rb.DocumentSetGraphicSelection(rdoc, int(SetGraphicSelectionEnd), 10, 20); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("SetGraphicSelection on NULL pClass: err=%v, want ErrUnsupported", err)
+	}
+	if err := rb.DocumentSetBlockedCommandList(rdoc, 0, ".uno:Save"); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("SetBlockedCommandList on NULL pClass: err=%v, want ErrUnsupported", err)
+	}
+	if err := rb.DocumentResetSelection(rdoc); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("ResetSelection on NULL pClass: err=%v, want ErrUnsupported", err)
+	}
+
+	// Getters likewise surface ErrUnsupported.
+	text, mime, err := rb.DocumentGetTextSelection(rdoc, "text/plain")
+	if !errors.Is(err, ErrUnsupported) || text != "" || mime != "" {
+		t.Errorf("GetTextSelection on NULL pClass: (%q, %q, %v); want (\"\", \"\", ErrUnsupported)", text, mime, err)
+	}
+	if k, err := rb.DocumentGetSelectionType(rdoc); !errors.Is(err, ErrUnsupported) || k != 0 {
+		t.Errorf("GetSelectionType on NULL pClass: (%d, %v); want (0, ErrUnsupported)", k, err)
 	}
 	kind, _, _, err := rb.DocumentGetSelectionTypeAndText(rdoc, "text/plain")
 	if !errors.Is(err, ErrUnsupported) {

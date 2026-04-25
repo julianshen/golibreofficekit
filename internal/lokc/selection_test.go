@@ -40,22 +40,25 @@ func TestDocumentSetBlockedCommandList_NilSafe(t *testing.T) {
 }
 
 func TestDocumentGetTextSelection_NilSafe(t *testing.T) {
-	// Zero handle and fake-pClass both yield empty strings without crashing.
-	if text, mime := DocumentGetTextSelection(DocumentHandle{}, "text/plain"); text != "" || mime != "" {
-		t.Errorf("zero handle: got (%q, %q), want empty strings", text, mime)
+	// Zero handle and fake-pClass both surface ErrUnsupported and
+	// empty strings — callers can distinguish "no selection" (no
+	// error) from "vtable slot missing" (ErrUnsupported).
+	text, mime, err := DocumentGetTextSelection(DocumentHandle{}, "text/plain")
+	if err != ErrUnsupported || text != "" || mime != "" {
+		t.Errorf("zero handle: got (%q, %q, %v); want (\"\", \"\", ErrUnsupported)", text, mime, err)
 	}
-	h := newFakeDoc(t)
-	if text, mime := DocumentGetTextSelection(h, "text/plain"); text != "" || mime != "" {
-		t.Errorf("nil pClass: got (%q, %q), want empty strings", text, mime)
+	text, mime, err = DocumentGetTextSelection(newFakeDoc(t), "text/plain")
+	if err != ErrUnsupported || text != "" || mime != "" {
+		t.Errorf("nil pClass: got (%q, %q, %v); want (\"\", \"\", ErrUnsupported)", text, mime, err)
 	}
 }
 
 func TestDocumentGetSelectionType_NilSafe(t *testing.T) {
-	if got := DocumentGetSelectionType(DocumentHandle{}); got != -1 {
-		t.Errorf("zero handle: got %d, want -1", got)
+	if v, err := DocumentGetSelectionType(DocumentHandle{}); err != ErrUnsupported || v != 0 {
+		t.Errorf("zero handle: got (%d, %v); want (0, ErrUnsupported)", v, err)
 	}
-	if got := DocumentGetSelectionType(newFakeDoc(t)); got != -1 {
-		t.Errorf("nil pClass: got %d, want -1", got)
+	if v, err := DocumentGetSelectionType(newFakeDoc(t)); err != ErrUnsupported || v != 0 {
+		t.Errorf("nil pClass: got (%d, %v); want (0, ErrUnsupported)", v, err)
 	}
 }
 

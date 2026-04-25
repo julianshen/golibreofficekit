@@ -362,13 +362,13 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	//
 	// SelectAll is posted as a UNO command. On LO 24.8 on Fedora, LOK
 	// silently drops posted input until a document-level callback is
-	// registered — binding registerCallback is Phase 9 scope. If the
-	// selection never appears within the poll budget, Skipf this
-	// block (t.Logf the reason) rather than failing. The unit tests
-	// in lok/selection_test.go exercise every argument-forwarding and
-	// error path; this block exists to catch real-LOK regressions in
-	// the cgo glue, not to gate the test suite on Phase 9 callback
-	// plumbing.
+	// registered (callback binding is its own follow-up). If the
+	// selection never appears within the poll budget, t.Logf the
+	// reason and skip the dependent assertions rather than failing.
+	// The unit tests in lok/selection_test.go own every
+	// argument-forwarding and error path; this block exists to catch
+	// real-LOK regressions in the cgo glue, not to gate the test
+	// suite on the callback follow-up.
 	if err := doc.PostUnoCommand(".uno:SelectAll", "", false); err != nil {
 		t.Errorf("Phase 8: SelectAll: %v", err)
 	}
@@ -389,7 +389,7 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 		time.Sleep(25 * time.Millisecond)
 	}
 	if !selectionAppeared {
-		t.Logf("Phase 8: SelectAll yielded no observable selection (LO build drops input without registerCallback — Phase 9 scope); skipping selection assertions")
+		t.Logf("Phase 8: SelectAll yielded no observable selection (LO build drops input without registerCallback hooked up); skipping selection assertions")
 	} else {
 		if kind != SelectionKindText && kind != SelectionKindComplex {
 			t.Errorf("Phase 8: selection kind after SelectAll: %v", kind)
@@ -439,8 +439,9 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	}
 
 	// Smoke calls — assert only that the cgo path doesn't crash.
-	// Phase 10 window geometry will let us drive these with real
-	// coordinates.
+	// Coordinate-driven assertions wait until window geometry is
+	// available (a follow-up phase); for now the methods are
+	// exercised with (0, 0).
 	if err := doc.SetTextSelection(SetTextSelectionStart, 0, 0); err != nil {
 		t.Errorf("Phase 8: SetTextSelection: %v", err)
 	}

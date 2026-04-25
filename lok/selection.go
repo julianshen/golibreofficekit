@@ -4,6 +4,7 @@ package lok
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -106,7 +107,9 @@ func validateMime(s string) error {
 
 // GetTextSelection copies the current text selection as mimeType.
 // LOK may substitute a different, compatible mime, which is returned
-// in usedMime.
+// in usedMime. Both strings may be empty when no selection exists;
+// the error return is non-nil only when the LOK build does not
+// expose getTextSelection (returns ErrUnsupported).
 func (d *Document) GetTextSelection(mimeType string) (text, usedMime string, err error) {
 	if err := validateMime(mimeType); err != nil {
 		return "", "", err
@@ -116,20 +119,24 @@ func (d *Document) GetTextSelection(mimeType string) (text, usedMime string, err
 		return "", "", gerr
 	}
 	defer unlock()
-	t, m := d.office.be.DocumentGetTextSelection(d.h, mimeType)
-	return t, m, nil
+	return d.office.be.DocumentGetTextSelection(d.h, mimeType)
 }
 
 // GetSelectionKind reports what kind of selection is currently
 // active without copying any text. Works on all supported LO
-// versions.
+// versions; returns ErrUnsupported only when the LOK build does
+// not expose getSelectionType.
 func (d *Document) GetSelectionKind() (SelectionKind, error) {
 	unlock, err := d.guard()
 	if err != nil {
 		return SelectionKindNone, err
 	}
 	defer unlock()
-	return selectionKindFromLOK(d.office.be.DocumentGetSelectionType(d.h)), nil
+	v, berr := d.office.be.DocumentGetSelectionType(d.h)
+	if berr != nil {
+		return SelectionKindNone, berr
+	}
+	return selectionKindFromLOK(v), nil
 }
 
 // GetSelectionTypeAndText returns the selection kind and the
@@ -168,19 +175,18 @@ func (d *Document) SetTextSelection(typ SetTextSelectionType, x, y int64) error 
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentSetTextSelection(d.h, int(typ), int(x), int(y))
-	return nil
+	return d.office.be.DocumentSetTextSelection(d.h, int(typ), int(x), int(y))
 }
 
-// ResetSelection clears the current selection.
+// ResetSelection clears the current selection. Returns ErrUnsupported
+// when the LOK build does not expose resetSelection.
 func (d *Document) ResetSelection() error {
 	unlock, err := d.guard()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentResetSelection(d.h)
-	return nil
+	return d.office.be.DocumentResetSelection(d.h)
 }
 
 // SetGraphicSelection drags a graphic-selection handle at (x, y)
@@ -200,18 +206,25 @@ func (d *Document) SetGraphicSelection(typ SetGraphicSelectionType, x, y int64) 
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentSetGraphicSelection(d.h, int(typ), int(x), int(y))
-	return nil
+	return d.office.be.DocumentSetGraphicSelection(d.h, int(typ), int(x), int(y))
 }
 
 // SetBlockedCommandList blocks the comma-separated set of UNO
-// commands (csv) for the given view.
+// commands (csv) for the given view. viewID must fit in int32 — LOK's
+// C ABI takes int there. Returns ErrUnsupported when the LOK build
+// does not expose setBlockedCommandList.
 func (d *Document) SetBlockedCommandList(viewID int, csv string) error {
+	if viewID > math.MaxInt32 || viewID < math.MinInt32 {
+		return &LOKError{
+			Op:     "SetBlockedCommandList",
+			Detail: fmt.Sprintf("viewID out of int32 range: %d", viewID),
+			err:    ErrInvalidOption,
+		}
+	}
 	unlock, err := d.guard()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentSetBlockedCommandList(d.h, viewID, csv)
-	return nil
+	return d.office.be.DocumentSetBlockedCommandList(d.h, viewID, csv)
 }
