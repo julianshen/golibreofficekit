@@ -438,6 +438,27 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 		t.Errorf("Phase 8: SetBlockedCommandList: %v", err)
 	}
 
+	// --- Phase 9: office-level listener smoke ---
+	//
+	// Office-level events vary across LO versions, so we don't
+	// assert on event types — only that the trampoline is reachable
+	// (the listener may legitimately receive zero events here, in
+	// which case the smoke just verifies AddListener / cancel work).
+	officeFired := make(chan Event, 8)
+	cancelOffice, err := o.AddListener(func(e Event) {
+		select {
+		case officeFired <- e:
+		default:
+		}
+	})
+	if err != nil {
+		t.Errorf("Phase 9: Office.AddListener: %v", err)
+	}
+	cancelOffice()
+	if err := o.TrimMemory(0); err != nil {
+		t.Errorf("Phase 9: TrimMemory: %v", err)
+	}
+
 	// --- Phase 8: clipboard round-trip ---
 	//
 	// setClipboard / getClipboard do not depend on registerCallback
