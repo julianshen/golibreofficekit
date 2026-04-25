@@ -143,6 +143,12 @@ func RegisterOfficeCallback(o OfficeHandle, h dispatchHandle) error {
 	return nil
 }
 
+// LookupDispatcherForTest exposes lookupDispatcher to tests in
+// other packages (notably lok). Production code must not call it.
+func LookupDispatcherForTest(h uintptr) Dispatcher {
+	return lookupDispatcher(dispatchHandle(h))
+}
+
 // RegisterDocumentCallback wires the Document-level trampoline into
 // LOK using h as the pData handle. Returns ErrUnsupported when the
 // vtable slot is NULL.

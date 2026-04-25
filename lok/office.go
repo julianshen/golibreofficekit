@@ -5,6 +5,8 @@ package lok
 import (
 	"runtime"
 	"sync"
+
+	"github.com/julianshen/golibreofficekit/internal/lokc"
 )
 
 // currentBackend is swapped in tests; real builds initialise it via
@@ -23,10 +25,12 @@ func setBackend(b backend) {
 // Office is the LibreOffice process. It is safe to use from multiple
 // goroutines; calls serialise on an internal mutex.
 type Office struct {
-	mu     sync.Mutex
-	be     backend
-	h      officeHandle
-	closed bool
+	mu        sync.Mutex
+	be        backend
+	h         officeHandle
+	closed    bool
+	listeners *listenerSet
+	listenerH uintptr // dispatch handle in the lokc handle table
 }
 
 // Singleton state.
@@ -81,6 +85,16 @@ func New(installPath string, opts ...Option) (*Office, error) {
 	}
 
 	o := &Office{be: be, h: h}
+	o.listeners = newListenerSet()
+	o.listenerH = lokc.RegisterDispatcherUintptr(o.listeners)
+	if regErr := be.RegisterOfficeCallback(h, o.listenerH); regErr != nil {
+		// Tear down before surfacing — newListenerSet spawned a
+		// goroutine we must reap.
+		lokc.UnregisterDispatcherUintptr(o.listenerH)
+		o.listeners.close()
+		be.OfficeDestroy(h)
+		return nil, &LOKError{Op: "RegisterOfficeCallback", Detail: regErr.Error(), err: regErr}
+	}
 	live = o
 	return o, nil
 }
@@ -94,6 +108,10 @@ func (o *Office) Close() error {
 		return nil
 	}
 	o.closed = true
+	if o.listeners != nil {
+		lokc.UnregisterDispatcherUintptr(o.listenerH)
+		o.listeners.close()
+	}
 	o.be.OfficeDestroy(o.h)
 
 	singletonMu.Lock()
@@ -158,6 +176,31 @@ func (o *Office) DumpState() (string, error) {
 		return "", ErrClosed
 	}
 	return o.be.OfficeDumpState(o.h), nil
+}
+
+// AddListener registers cb to receive office-wide events. See
+// listener.go for the dispatch contract. Returns ErrClosed if the
+// Office has been closed and ErrInvalidOption if cb is nil.
+func (o *Office) AddListener(cb func(Event)) (cancel func(), err error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.closed {
+		return nil, ErrClosed
+	}
+	c, addErr := o.listeners.addChecked(cb)
+	if addErr != nil {
+		return nil, &LOKError{Op: "AddListener", Detail: addErr.Error(), err: ErrInvalidOption}
+	}
+	return c, nil
+}
+
+// DroppedEvents returns the cumulative count of office-level events
+// the dispatcher dropped because the buffer was full.
+func (o *Office) DroppedEvents() uint64 {
+	if o.listeners == nil {
+		return 0
+	}
+	return o.listeners.Dropped()
 }
 
 // SetDocumentPassword preloads the password for a document URL that

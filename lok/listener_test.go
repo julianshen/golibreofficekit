@@ -3,10 +3,13 @@
 package lok
 
 import (
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/julianshen/golibreofficekit/internal/lokc"
 )
 
 func TestListenerSet_DispatchInvokesAllListeners(t *testing.T) {
@@ -151,6 +154,83 @@ func TestListenerSet_CloseJoinsDispatcher(t *testing.T) {
 		t.Errorf("close() did not return within 1s — dispatcher leak?")
 	}
 	ls.close() // idempotent
+}
+
+// dispatchOfficeFromFake walks back through the lokc handle table
+// to the listenerSet the fake handed off when New() called
+// RegisterOfficeCallback. Used by tests to simulate trampoline
+// firing without going through the real cgo path.
+func dispatchOfficeFromFake(t *testing.T, fb *fakeBackend) *listenerSet {
+	t.Helper()
+	if fb.lastOfficeCallbackHandle == 0 {
+		t.Fatalf("fakeBackend never received RegisterOfficeCallback")
+	}
+	d := lokc.LookupDispatcherForTest(fb.lastOfficeCallbackHandle)
+	if d == nil {
+		t.Fatalf("no dispatcher registered under handle %d", fb.lastOfficeCallbackHandle)
+	}
+	ls, ok := d.(*listenerSet)
+	if !ok {
+		t.Fatalf("dispatcher is %T, not *listenerSet", d)
+	}
+	return ls
+}
+
+func TestOffice_AddListener_DeliversEvent(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+
+	got := make(chan Event, 1)
+	cancel, err := o.AddListener(func(e Event) {
+		select {
+		case got <- e:
+		default:
+		}
+	})
+	if err != nil {
+		t.Fatalf("AddListener: %v", err)
+	}
+	defer cancel()
+
+	dispatchOfficeFromFake(t, fb).Dispatch(int(EventTypeStateChanged), []byte(".uno:Bold=true"))
+
+	select {
+	case e := <-got:
+		if e.Type != EventTypeStateChanged || string(e.Payload) != ".uno:Bold=true" {
+			t.Errorf("got %+v", e)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("listener never received event")
+	}
+}
+
+func TestOffice_AddListener_AfterCloseErrors(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	o.Close()
+	if _, err := o.AddListener(func(Event) {}); !errors.Is(err, ErrClosed) {
+		t.Errorf("want ErrClosed, got %v", err)
+	}
+}
+
+func TestOffice_AddListener_NilCallback(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	if _, err := o.AddListener(nil); !errors.Is(err, ErrInvalidOption) {
+		t.Errorf("want ErrInvalidOption, got %v", err)
+	}
+}
+
+func TestOffice_DroppedEvents_StartsAtZero(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	if got := o.DroppedEvents(); got != 0 {
+		t.Errorf("DroppedEvents()=%d, want 0", got)
+	}
 }
 
 var _ = sync.Mutex{}
