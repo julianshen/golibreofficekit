@@ -358,84 +358,70 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 		t.Errorf("InsertTable: %v", err)
 	}
 
-	// --- Phase 8: selection + clipboard smoke on a real document ---
+	// --- Phase 9: SelectAll → text-selection callback wait ---
 	//
-	// SelectAll is posted as a UNO command. On LO 24.8 on Fedora, LOK
-	// silently drops posted input until a document-level callback is
-	// registered (callback binding is its own follow-up). If the
-	// selection never appears within the poll budget, t.Logf the
-	// reason and skip the dependent assertions rather than failing.
-	// The unit tests in lok/selection_test.go own every
-	// argument-forwarding and error path; this block exists to catch
-	// real-LOK regressions in the cgo glue, not to gate the test
-	// suite on the callback follow-up.
+	// Phase 8 deferred this branch behind a t.Logf capability gate
+	// because LO 24.8 drops posted input until a callback is
+	// registered. Phase 9 registers the trampoline at Load() so the
+	// gate is gone — the listener fires and we wait on it.
+	selFired := make(chan struct{}, 1)
+	cancelSel, err := doc.AddListener(func(e Event) {
+		switch e.Type {
+		case EventTypeTextSelection, EventTypeTextSelectionStart, EventTypeTextSelectionEnd:
+			select {
+			case selFired <- struct{}{}:
+			default:
+			}
+		}
+	})
+	if err != nil {
+		t.Fatalf("Phase 9: AddListener: %v", err)
+	}
+	defer cancelSel()
+
 	if err := doc.PostUnoCommand(".uno:SelectAll", "", false); err != nil {
 		t.Errorf("Phase 8: SelectAll: %v", err)
 	}
-	selectionAppeared := false
-	deadline := time.Now().Add(500 * time.Millisecond)
-	var kind SelectionKind
-	for time.Now().Before(deadline) {
-		k, err := doc.GetSelectionKind()
-		if err != nil {
-			t.Errorf("Phase 8: GetSelectionKind: %v", err)
-			break
-		}
-		if k != SelectionKindNone {
-			kind = k
-			selectionAppeared = true
-			break
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-	if !selectionAppeared {
-		t.Logf("Phase 8: SelectAll yielded no observable selection (LO build drops input without registerCallback hooked up); skipping selection assertions")
-	} else {
-		if kind != SelectionKindText && kind != SelectionKindComplex {
-			t.Errorf("Phase 8: selection kind after SelectAll: %v", kind)
-		}
-		text, usedMime, err := doc.GetTextSelection("text/plain;charset=utf-8")
-		if err != nil {
-			t.Errorf("Phase 8: GetTextSelection: %v", err)
-		}
-		if usedMime == "" {
-			t.Errorf("Phase 8: usedMime should be non-empty")
-		}
-		if !strings.Contains(text, "Hello") {
-			t.Errorf("Phase 8: selection text %q does not contain 'Hello'", text)
-		}
-		// GetSelectionTypeAndText is LO 7.4+; the supported LO here is
-		// 24.8 so it should always be present. Still capability-gate
-		// for safety — see spec §4.3.
-		kind2, text2, _, err := doc.GetSelectionTypeAndText("text/plain;charset=utf-8")
-		if errors.Is(err, ErrUnsupported) {
-			t.Logf("Phase 8: GetSelectionTypeAndText unsupported on this LO build")
-		} else if err != nil {
-			t.Errorf("Phase 8: GetSelectionTypeAndText: %v", err)
-		} else {
-			if kind2 != SelectionKindText {
-				t.Errorf("Phase 8: kind2=%v, want %v", kind2, SelectionKindText)
-			}
-			if text2 != text {
-				t.Errorf("Phase 8: text mismatch: %q vs %q", text2, text)
-			}
-		}
 
-		if err := doc.ResetSelection(); err != nil {
-			t.Errorf("Phase 8: ResetSelection: %v", err)
+	select {
+	case <-selFired:
+		// Event arrived; assertions run unconditionally below.
+	case <-time.After(2 * time.Second):
+		t.Fatalf("Phase 8: timed out waiting for text-selection callback")
+	}
+
+	kind, err := doc.GetSelectionKind()
+	if err != nil {
+		t.Errorf("Phase 8: GetSelectionKind: %v", err)
+	}
+	if kind != SelectionKindText && kind != SelectionKindComplex {
+		t.Errorf("Phase 8: selection kind after SelectAll: %v", kind)
+	}
+	text, usedMime, err := doc.GetTextSelection("text/plain;charset=utf-8")
+	if err != nil {
+		t.Errorf("Phase 8: GetTextSelection: %v", err)
+	}
+	if usedMime == "" {
+		t.Errorf("Phase 8: usedMime should be non-empty")
+	}
+	if !strings.Contains(text, "Hello") {
+		t.Errorf("Phase 8: selection text %q does not contain 'Hello'", text)
+	}
+	kind2, text2, _, err := doc.GetSelectionTypeAndText("text/plain;charset=utf-8")
+	if errors.Is(err, ErrUnsupported) {
+		t.Logf("Phase 8: GetSelectionTypeAndText unsupported on this LO build")
+	} else if err != nil {
+		t.Errorf("Phase 8: GetSelectionTypeAndText: %v", err)
+	} else {
+		if kind2 != SelectionKindText {
+			t.Errorf("Phase 8: kind2=%v, want %v", kind2, SelectionKindText)
 		}
-		deadline = time.Now().Add(500 * time.Millisecond)
-		for time.Now().Before(deadline) {
-			k, err := doc.GetSelectionKind()
-			if err != nil {
-				t.Errorf("Phase 8: GetSelectionKind after reset: %v", err)
-				break
-			}
-			if k == SelectionKindNone {
-				break
-			}
-			time.Sleep(25 * time.Millisecond)
+		if text2 != text {
+			t.Errorf("Phase 8: text mismatch: %q vs %q", text2, text)
 		}
+	}
+	if err := doc.ResetSelection(); err != nil {
+		t.Errorf("Phase 8: ResetSelection: %v", err)
 	}
 
 	// Smoke calls — assert only that the cgo path doesn't crash.
