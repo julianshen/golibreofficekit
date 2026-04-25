@@ -12,6 +12,8 @@ type fakeDispatcher struct {
 	received []Event
 }
 
+// Event is a test-local type holding the arguments the trampoline
+// delivered to Dispatch. It will be replaced by lok.Event in Task 4.
 type Event struct {
 	Type    int
 	Payload []byte
@@ -92,5 +94,92 @@ func TestRegisterDispatcher_ConcurrentSafe(t *testing.T) {
 	}
 	if len(seen) != n {
 		t.Errorf("got %d unique handles, want %d", len(seen), n)
+	}
+}
+
+func TestGoLOKDispatchOffice_RoutesToHandle(t *testing.T) {
+	d := &fakeDispatcher{}
+	h := RegisterDispatcher(d)
+	t.Cleanup(func() { UnregisterDispatcher(h) })
+
+	s := "hello"
+	testDispatchOffice(2, &s, h)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.received) != 1 {
+		t.Fatalf("got %d events, want 1", len(d.received))
+	}
+	if d.received[0].Type != 2 || string(d.received[0].Payload) != "hello" {
+		t.Errorf("got %+v, want type=2 payload=hello", d.received[0])
+	}
+}
+
+func TestGoLOKDispatchDocument_RoutesToHandle(t *testing.T) {
+	d := &fakeDispatcher{}
+	h := RegisterDispatcher(d)
+	t.Cleanup(func() { UnregisterDispatcher(h) })
+
+	s := "world"
+	testDispatchDocument(8, &s, h)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.received) != 1 || d.received[0].Type != 8 || string(d.received[0].Payload) != "world" {
+		t.Errorf("got %+v", d.received)
+	}
+}
+
+func TestGoLOKDispatch_NULLPayloadGivesNilSlice(t *testing.T) {
+	d := &fakeDispatcher{}
+	h := RegisterDispatcher(d)
+	t.Cleanup(func() { UnregisterDispatcher(h) })
+
+	testDispatchOffice(0, nil, h)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.received) != 1 || d.received[0].Payload != nil {
+		t.Errorf("got %+v, want one event with nil payload", d.received)
+	}
+}
+
+func TestGoLOKDispatchDocument_NULLPayloadGivesNilSlice(t *testing.T) {
+	d := &fakeDispatcher{}
+	h := RegisterDispatcher(d)
+	t.Cleanup(func() { UnregisterDispatcher(h) })
+
+	testDispatchDocument(0, nil, h)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.received) != 1 || d.received[0].Payload != nil {
+		t.Errorf("got %+v, want one event with nil payload", d.received)
+	}
+}
+
+func TestGoLOKDispatch_UnknownHandleNoOp(t *testing.T) {
+	// Use handle=0 (reserved) and an arbitrary unregistered value.
+	testDispatchOffice(2, nil, dispatchHandle(0))
+	testDispatchOffice(2, nil, dispatchHandle(99999))
+	// Survives without panic. No assertion needed.
+}
+
+func TestGoLOKDispatch_LongPayloadRoundTrip(t *testing.T) {
+	d := &fakeDispatcher{}
+	h := RegisterDispatcher(d)
+	t.Cleanup(func() { UnregisterDispatcher(h) })
+
+	want := make([]byte, 65*1024)
+	for i := range want {
+		want[i] = byte('a' + i%26)
+	}
+	s := string(want)
+	testDispatchOffice(0, &s, h)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.received) != 1 || string(d.received[0].Payload) != string(want) {
+		t.Errorf("payload round-trip failed; len got=%d want=%d", len(d.received[0].Payload), len(want))
 	}
 }

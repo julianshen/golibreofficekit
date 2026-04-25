@@ -2,9 +2,41 @@
 
 package lokc
 
+/*
+#cgo CFLAGS: -I${SRCDIR}/../../third_party/lok -DLOK_USE_UNSTABLE_API
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include "LibreOfficeKit/LibreOfficeKit.h"
+
+// Forward declarations of the //export Go trampolines so the C code
+// below can pass their addresses to LOK.
+void goLOKDispatchOffice(int typ, char* payload, void* pData);
+void goLOKDispatchDocument(int typ, char* payload, void* pData);
+
+// Returns 1 on success, 0 when the vtable slot is NULL (unsupported).
+static int go_office_register_callback(LibreOfficeKit* p, uintptr_t handle) {
+    if (p == NULL || p->pClass == NULL || p->pClass->registerCallback == NULL) return 0;
+    p->pClass->registerCallback(p,
+                                (LibreOfficeKitCallback)goLOKDispatchOffice,
+                                (void*)handle);
+    return 1;
+}
+
+static int go_doc_register_callback(LibreOfficeKitDocument* d, uintptr_t handle) {
+    if (d == NULL || d->pClass == NULL || d->pClass->registerCallback == NULL) return 0;
+    d->pClass->registerCallback(d,
+                                (LibreOfficeKitCallback)goLOKDispatchDocument,
+                                (void*)handle);
+    return 1;
+}
+*/
+import "C"
+
 import (
 	"sync"
 	"sync/atomic"
+	"unsafe"
 )
 
 // Dispatcher is the lok-side adapter the cgo trampoline routes
@@ -49,4 +81,30 @@ func lookupDispatcher(h dispatchHandle) Dispatcher {
 	handleMu.RLock()
 	defer handleMu.RUnlock()
 	return handleTable[h]
+}
+
+// dispatch is the shared trampoline body. The two //export functions
+// differ only in name (so stack traces distinguish office vs doc
+// callbacks) and delegate to this shared logic.
+func dispatch(typ C.int, payload *C.char, pData unsafe.Pointer) {
+	h := dispatchHandle(uintptr(pData))
+	d := lookupDispatcher(h)
+	if d == nil {
+		return
+	}
+	var b []byte
+	if payload != nil {
+		b = C.GoBytes(unsafe.Pointer(payload), C.int(C.strlen(payload)))
+	}
+	d.Dispatch(int(typ), b)
+}
+
+//export goLOKDispatchOffice
+func goLOKDispatchOffice(typ C.int, payload *C.char, pData unsafe.Pointer) {
+	dispatch(typ, payload, pData)
+}
+
+//export goLOKDispatchDocument
+func goLOKDispatchDocument(typ C.int, payload *C.char, pData unsafe.Pointer) {
+	dispatch(typ, payload, pData)
 }
