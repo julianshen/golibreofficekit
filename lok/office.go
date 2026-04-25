@@ -108,10 +108,8 @@ func (o *Office) Close() error {
 		return nil
 	}
 	o.closed = true
-	if o.listeners != nil {
-		lokc.UnregisterDispatcherUintptr(o.listenerH)
-		o.listeners.close()
-	}
+	lokc.UnregisterDispatcherUintptr(o.listenerH)
+	o.listeners.close()
 	o.be.OfficeDestroy(o.h)
 
 	singletonMu.Lock()
@@ -197,9 +195,6 @@ func (o *Office) AddListener(cb func(Event)) (cancel func(), err error) {
 // DroppedEvents returns the cumulative count of office-level events
 // the dispatcher dropped because the buffer was full.
 func (o *Office) DroppedEvents() uint64 {
-	if o.listeners == nil {
-		return 0
-	}
 	return o.listeners.Dropped()
 }
 

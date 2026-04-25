@@ -247,10 +247,8 @@ func (d *Document) Close() error {
 	d.closeOnce.Do(func() {
 		d.office.mu.Lock()
 		defer d.office.mu.Unlock()
-		if d.listeners != nil {
-			lokc.UnregisterDispatcherUintptr(d.listenerH)
-			d.listeners.close()
-		}
+		lokc.UnregisterDispatcherUintptr(d.listenerH)
+		d.listeners.close()
 		d.office.be.DocumentDestroy(d.h)
 		d.closed = true
 		if d.tempPath != "" {
@@ -279,9 +277,6 @@ func (d *Document) AddListener(cb func(Event)) (cancel func(), err error) {
 // DroppedEvents returns the cumulative count of document-level events
 // the dispatcher dropped because the buffer was full.
 func (d *Document) DroppedEvents() uint64 {
-	if d.listeners == nil {
-		return 0
-	}
 	return d.listeners.Dropped()
 }
 
