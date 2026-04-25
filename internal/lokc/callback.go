@@ -109,6 +109,27 @@ func goLOKDispatchDocument(typ C.int, payload *C.char, pData unsafe.Pointer) {
 	dispatch(typ, payload, pData)
 }
 
+// DispatchHandleFromUintptr converts a caller-managed uintptr into
+// the package's dispatchHandle type. The lok package uses this when
+// it has obtained a handle via RegisterDispatcher and needs to feed
+// it to RegisterOfficeCallback / RegisterDocumentCallback.
+func DispatchHandleFromUintptr(v uintptr) dispatchHandle { return dispatchHandle(v) }
+
+// UintptrFromDispatchHandle is the inverse of DispatchHandleFromUintptr.
+func UintptrFromDispatchHandle(h dispatchHandle) uintptr { return uintptr(h) }
+
+// RegisterDispatcherUintptr is a convenience wrapper around
+// RegisterDispatcher that returns the handle as a plain uintptr so
+// callers don't depend on the unexported dispatchHandle type.
+func RegisterDispatcherUintptr(d Dispatcher) uintptr {
+	return uintptr(RegisterDispatcher(d))
+}
+
+// UnregisterDispatcherUintptr is the symmetric inverse.
+func UnregisterDispatcherUintptr(h uintptr) {
+	UnregisterDispatcher(dispatchHandle(h))
+}
+
 // RegisterOfficeCallback wires the Office-level trampoline into LOK
 // using h as the pData handle. Returns ErrUnsupported when the
 // vtable slot is NULL.

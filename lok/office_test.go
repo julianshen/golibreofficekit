@@ -127,6 +127,12 @@ type fakeBackend struct {
 	getClipboardErr       error
 	lastSetClipboardItems []clipboardItemInternal
 	setClipboardErr       error
+
+	// Callback registration (Phase 9).
+	lastOfficeCallbackHandle   uintptr
+	lastDocumentCallbackHandle uintptr
+	registerOfficeCallbackErr  error
+	registerDocCallbackErr     error
 }
 
 const fakeViewIDBase = 1000
@@ -635,4 +641,14 @@ func (f *fakeBackend) DocumentGetClipboard(_ documentHandle, mimes []string) ([]
 func (f *fakeBackend) DocumentSetClipboard(_ documentHandle, items []clipboardItemInternal) error {
 	f.lastSetClipboardItems = append([]clipboardItemInternal(nil), items...)
 	return f.setClipboardErr
+}
+
+func (f *fakeBackend) RegisterOfficeCallback(_ officeHandle, h uintptr) error {
+	f.lastOfficeCallbackHandle = h
+	return f.registerOfficeCallbackErr
+}
+
+func (f *fakeBackend) RegisterDocumentCallback(_ documentHandle, h uintptr) error {
+	f.lastDocumentCallbackHandle = h
+	return f.registerDocCallbackErr
 }
