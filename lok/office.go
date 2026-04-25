@@ -9,8 +9,7 @@ import (
 	"github.com/julianshen/golibreofficekit/internal/lokc"
 )
 
-// currentBackend is swapped in tests; real builds initialise it via
-// init() in real_backend.go.
+// currentBackend is swapped in tests; production sets it via init().
 var (
 	backendMu      sync.Mutex
 	currentBackend backend
@@ -88,8 +87,7 @@ func New(installPath string, opts ...Option) (*Office, error) {
 	o.listeners = newListenerSet()
 	o.listenerH = lokc.RegisterDispatcherUintptr(o.listeners)
 	if regErr := be.RegisterOfficeCallback(h, o.listenerH); regErr != nil {
-		// Tear down before surfacing — newListenerSet spawned a
-		// goroutine we must reap.
+		// Reap the dispatcher goroutine before returning the error.
 		lokc.UnregisterDispatcherUintptr(o.listenerH)
 		o.listeners.close()
 		be.OfficeDestroy(h)

@@ -110,9 +110,9 @@ func goLOKDispatchDocument(typ C.int, payload *C.char, pData unsafe.Pointer) {
 }
 
 // DispatchHandleFromUintptr converts a caller-managed uintptr into
-// the package's dispatchHandle type. The lok package uses this when
-// it has obtained a handle via RegisterDispatcher and needs to feed
-// it to RegisterOfficeCallback / RegisterDocumentCallback.
+// the package's dispatchHandle. The unexported handle type is
+// intentional; conversions cross via these helpers so callers don't
+// depend on the concrete type.
 func DispatchHandleFromUintptr(v uintptr) dispatchHandle { return dispatchHandle(v) }
 
 // UintptrFromDispatchHandle is the inverse of DispatchHandleFromUintptr.
@@ -143,8 +143,8 @@ func RegisterOfficeCallback(o OfficeHandle, h dispatchHandle) error {
 	return nil
 }
 
-// LookupDispatcherForTest exposes lookupDispatcher to tests in
-// other packages (notably lok). Production code must not call it.
+// LookupDispatcherForTest exposes lookupDispatcher to tests in other
+// packages. Production code must not call it.
 func LookupDispatcherForTest(h uintptr) Dispatcher {
 	return lookupDispatcher(dispatchHandle(h))
 }
