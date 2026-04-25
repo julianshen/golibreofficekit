@@ -221,6 +221,13 @@ func (d *Document) SetBlockedCommandList(viewID int, csv string) error {
 			err:    ErrInvalidOption,
 		}
 	}
+	if strings.IndexByte(csv, 0) >= 0 {
+		return &LOKError{
+			Op:     "SetBlockedCommandList",
+			Detail: "csv contains NUL byte",
+			err:    ErrInvalidOption,
+		}
+	}
 	unlock, err := d.guard()
 	if err != nil {
 		return err

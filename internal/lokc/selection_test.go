@@ -65,7 +65,7 @@ func TestDocumentGetSelectionType_NilSafe(t *testing.T) {
 func TestDocumentGetSelectionTypeAndText_UnsupportedOnNilSlot(t *testing.T) {
 	// Zero handle maps to Unsupported (the slot is effectively NULL).
 	kind, text, mime, err := DocumentGetSelectionTypeAndText(DocumentHandle{}, "text/plain")
-	if err == nil || err != ErrUnsupported {
+	if err != ErrUnsupported {
 		t.Errorf("zero handle: err=%v, want ErrUnsupported", err)
 	}
 	if kind != -1 || text != "" || mime != "" {
