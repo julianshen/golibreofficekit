@@ -108,3 +108,29 @@ func goLOKDispatchOffice(typ C.int, payload *C.char, pData unsafe.Pointer) {
 func goLOKDispatchDocument(typ C.int, payload *C.char, pData unsafe.Pointer) {
 	dispatch(typ, payload, pData)
 }
+
+// RegisterOfficeCallback wires the Office-level trampoline into LOK
+// using h as the pData handle. Returns ErrUnsupported when the
+// vtable slot is NULL.
+func RegisterOfficeCallback(o OfficeHandle, h dispatchHandle) error {
+	if !o.IsValid() {
+		return ErrUnsupported
+	}
+	if C.go_office_register_callback(o.p, C.uintptr_t(h)) == 0 {
+		return ErrUnsupported
+	}
+	return nil
+}
+
+// RegisterDocumentCallback wires the Document-level trampoline into
+// LOK using h as the pData handle. Returns ErrUnsupported when the
+// vtable slot is NULL.
+func RegisterDocumentCallback(d DocumentHandle, h dispatchHandle) error {
+	if !d.IsValid() {
+		return ErrUnsupported
+	}
+	if C.go_doc_register_callback(d.p, C.uintptr_t(h)) == 0 {
+		return ErrUnsupported
+	}
+	return nil
+}

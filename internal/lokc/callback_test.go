@@ -183,3 +183,21 @@ func TestGoLOKDispatch_LongPayloadRoundTrip(t *testing.T) {
 		t.Errorf("payload round-trip failed; len got=%d want=%d", len(d.received[0].Payload), len(want))
 	}
 }
+
+func TestRegisterOfficeCallback_NilSafe(t *testing.T) {
+	// Without an OfficeHandle helper we can only test the invalid
+	// path here. The success path is covered by realBackend tests
+	// against a fake document handle in lok/real_backend_test.go.
+	if err := RegisterOfficeCallback(OfficeHandle{}, dispatchHandle(1)); err != ErrUnsupported {
+		t.Errorf("zero handle: err=%v, want ErrUnsupported", err)
+	}
+}
+
+func TestRegisterDocumentCallback_NilSafe(t *testing.T) {
+	if err := RegisterDocumentCallback(DocumentHandle{}, dispatchHandle(1)); err != ErrUnsupported {
+		t.Errorf("zero handle: err=%v, want ErrUnsupported", err)
+	}
+	if err := RegisterDocumentCallback(newFakeDoc(t), dispatchHandle(1)); err != ErrUnsupported {
+		t.Errorf("nil pClass: err=%v, want ErrUnsupported", err)
+	}
+}
