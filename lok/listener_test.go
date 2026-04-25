@@ -4,7 +4,6 @@ package lok
 
 import (
 	"errors"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -134,6 +133,20 @@ func TestListenerSet_AddNilReturnsError(t *testing.T) {
 	if _, err := ls.addChecked(nil); err == nil {
 		t.Errorf("addChecked(nil) returned no error")
 	}
+}
+
+func TestListenerSet_DispatchAfterClose_NoPanic(t *testing.T) {
+	ls := newListenerSet()
+	ls.close()
+	// LO can fire one more callback while Close() is in flight on
+	// another thread; Dispatch must drop the event silently rather
+	// than panicking with "send on closed channel".
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("Dispatch after close panicked: %v", r)
+		}
+	}()
+	ls.Dispatch(0, nil)
 }
 
 func TestListenerSet_CloseJoinsDispatcher(t *testing.T) {
@@ -312,5 +325,3 @@ func TestDocument_DroppedEvents_StartsAtZero(t *testing.T) {
 		t.Errorf("DroppedEvents()=%d, want 0", got)
 	}
 }
-
-var _ = sync.Mutex{}

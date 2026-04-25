@@ -11,8 +11,7 @@ import (
 
 // listenerBufferSize is the per-listenerSet buffered channel
 // capacity. Drop-newest applies once it overflows. 256 covers normal
-// interactive event rates from a single document; not configurable
-// in this phase.
+// interactive event rates from a single document.
 const listenerBufferSize = 256
 
 // errNilListener is returned by addChecked when the caller passes a
@@ -36,7 +35,9 @@ type listenerSet struct {
 	nextID    uint64
 	ch        chan Event
 	dropped   atomic.Uint64
+	closed    atomic.Bool
 	closeOnce sync.Once
+	stopCh    chan struct{}
 	done      chan struct{}
 }
 
@@ -44,8 +45,9 @@ type listenerSet struct {
 // Always paired with close() at end-of-life.
 func newListenerSet() *listenerSet {
 	ls := &listenerSet{
-		ch:   make(chan Event, listenerBufferSize),
-		done: make(chan struct{}),
+		ch:     make(chan Event, listenerBufferSize),
+		stopCh: make(chan struct{}),
+		done:   make(chan struct{}),
 	}
 	go ls.run()
 	return ls
@@ -90,7 +92,15 @@ func (ls *listenerSet) addChecked(cb func(Event)) (func(), error) {
 
 // Dispatch implements lokc.Dispatcher. Called from the //export
 // trampoline on LOK's thread; it must not block.
+//
+// LOK can fire callbacks on its own thread while another goroutine is
+// closing the set, so the channel is never closed by the sender side.
+// Closing flips an atomic flag and signals stopCh; Dispatch drops
+// post-close events silently to keep the trampoline panic-free.
 func (ls *listenerSet) Dispatch(typ int, payload []byte) {
+	if ls.closed.Load() {
+		return
+	}
 	select {
 	case ls.ch <- Event{Type: EventType(typ), Payload: payload}:
 	default:
@@ -101,18 +111,23 @@ func (ls *listenerSet) Dispatch(typ int, payload []byte) {
 // Dropped returns the cumulative dropped-event count.
 func (ls *listenerSet) Dropped() uint64 { return ls.dropped.Load() }
 
-// run is the dispatcher goroutine.
+// run is the dispatcher goroutine. It exits when stopCh is closed.
 func (ls *listenerSet) run() {
 	defer close(ls.done)
-	for ev := range ls.ch {
-		ls.mu.Lock()
-		// Snapshot the listener slice so a cancel during dispatch
-		// doesn't race with iteration.
-		snap := make([]listenerEntry, len(ls.listeners))
-		copy(snap, ls.listeners)
-		ls.mu.Unlock()
-		for _, e := range snap {
-			ls.runOne(e.cb, ev)
+	for {
+		select {
+		case <-ls.stopCh:
+			return
+		case ev := <-ls.ch:
+			ls.mu.Lock()
+			// Snapshot the listener slice so a cancel during dispatch
+			// doesn't race with iteration.
+			snap := make([]listenerEntry, len(ls.listeners))
+			copy(snap, ls.listeners)
+			ls.mu.Unlock()
+			for _, e := range snap {
+				ls.runOne(e.cb, ev)
+			}
 		}
 	}
 }
@@ -129,11 +144,13 @@ func (ls *listenerSet) runOne(cb func(Event), ev Event) {
 	cb(ev)
 }
 
-// close signals the dispatcher to drain and exit, then waits.
-// Idempotent.
+// close signals the dispatcher to exit and waits for it. Idempotent.
+// The event channel is intentionally not closed: the LOK trampoline
+// can race with this call and any post-close Dispatch must not panic.
 func (ls *listenerSet) close() {
 	ls.closeOnce.Do(func() {
-		close(ls.ch)
+		ls.closed.Store(true)
+		close(ls.stopCh)
 	})
 	<-ls.done
 }
