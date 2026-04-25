@@ -368,6 +368,32 @@ func TestNew_HookError(t *testing.T) {
 	}
 }
 
+func TestNew_RegisterOfficeCallbackError(t *testing.T) {
+	synth := errors.New("synthetic register-callback failure")
+	fb := &fakeBackend{registerOfficeCallbackErr: synth}
+	withFakeBackend(t, fb)
+
+	o, err := New("/install")
+	if err == nil {
+		t.Fatalf("New: want error, got nil; o=%v", o)
+	}
+	if o != nil {
+		t.Errorf("New: want nil Office on failure, got %v", o)
+	}
+	if !errors.Is(err, synth) {
+		t.Errorf("New: want wraps synthetic, got %v", err)
+	}
+
+	// Singleton must not be set — a second New must work.
+	// Clear the error so the retry can succeed.
+	fb.registerOfficeCallbackErr = nil
+	o2, err2 := New("/install")
+	if err2 != nil {
+		t.Fatalf("second New: %v", err2)
+	}
+	defer o2.Close()
+}
+
 func TestClose_Idempotent(t *testing.T) {
 	fb := &fakeBackend{}
 	withFakeBackend(t, fb)

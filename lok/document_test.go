@@ -214,6 +214,29 @@ func TestLoad_InvalidLanguageOption(t *testing.T) {
 	}
 }
 
+func TestLoad_RegisterDocumentCallbackError(t *testing.T) {
+	synth := errors.New("synthetic register-doc-callback failure")
+	fb := &fakeBackend{registerDocCallbackErr: synth}
+	withFakeBackend(t, fb)
+
+	o, err := New("/install")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer o.Close()
+
+	doc, err := o.Load("/tmp/x.odt")
+	if err == nil {
+		t.Fatalf("Load: want error, got nil; doc=%v", doc)
+	}
+	if doc != nil {
+		t.Errorf("Load: want nil Document on failure, got %v", doc)
+	}
+	if !errors.Is(err, synth) {
+		t.Errorf("Load: want wraps synthetic, got %v", err)
+	}
+}
+
 func TestDocument_Close_Idempotent(t *testing.T) {
 	fb := &fakeBackend{}
 	withFakeBackend(t, fb)

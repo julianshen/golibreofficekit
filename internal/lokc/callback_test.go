@@ -12,8 +12,9 @@ type fakeDispatcher struct {
 	received []Event
 }
 
-// Event is a test-local type holding the arguments the trampoline
-// delivered to Dispatch. It will be replaced by lok.Event in Task 4.
+// Event is a test-local mirror of the trampoline's raw Dispatch
+// arguments. The public lok.Event is in the lok package and is not
+// importable here (would create a cycle).
 type Event struct {
 	Type    int
 	Payload []byte

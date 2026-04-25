@@ -380,48 +380,48 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	defer cancelSel()
 
 	if err := doc.PostUnoCommand(".uno:SelectAll", "", false); err != nil {
-		t.Errorf("Phase 8: SelectAll: %v", err)
+		t.Errorf("Phase 9: SelectAll: %v", err)
 	}
 
 	select {
 	case <-selFired:
 		// Event arrived; assertions run unconditionally below.
 	case <-time.After(2 * time.Second):
-		t.Fatalf("Phase 8: timed out waiting for text-selection callback")
+		t.Fatalf("Phase 9: timed out waiting for text-selection callback")
 	}
 
 	kind, err := doc.GetSelectionKind()
 	if err != nil {
-		t.Errorf("Phase 8: GetSelectionKind: %v", err)
+		t.Errorf("Phase 9: GetSelectionKind: %v", err)
 	}
 	if kind != SelectionKindText && kind != SelectionKindComplex {
-		t.Errorf("Phase 8: selection kind after SelectAll: %v", kind)
+		t.Errorf("Phase 9: selection kind after SelectAll: %v", kind)
 	}
 	text, usedMime, err := doc.GetTextSelection("text/plain;charset=utf-8")
 	if err != nil {
-		t.Errorf("Phase 8: GetTextSelection: %v", err)
+		t.Errorf("Phase 9: GetTextSelection: %v", err)
 	}
 	if usedMime == "" {
-		t.Errorf("Phase 8: usedMime should be non-empty")
+		t.Errorf("Phase 9: usedMime should be non-empty")
 	}
 	if !strings.Contains(text, "Hello") {
-		t.Errorf("Phase 8: selection text %q does not contain 'Hello'", text)
+		t.Errorf("Phase 9: selection text %q does not contain 'Hello'", text)
 	}
 	kind2, text2, _, err := doc.GetSelectionTypeAndText("text/plain;charset=utf-8")
 	if errors.Is(err, ErrUnsupported) {
-		t.Logf("Phase 8: GetSelectionTypeAndText unsupported on this LO build")
+		t.Logf("Phase 9: GetSelectionTypeAndText unsupported on this LO build")
 	} else if err != nil {
-		t.Errorf("Phase 8: GetSelectionTypeAndText: %v", err)
+		t.Errorf("Phase 9: GetSelectionTypeAndText: %v", err)
 	} else {
 		if kind2 != SelectionKindText {
-			t.Errorf("Phase 8: kind2=%v, want %v", kind2, SelectionKindText)
+			t.Errorf("Phase 9: kind2=%v, want %v", kind2, SelectionKindText)
 		}
 		if text2 != text {
-			t.Errorf("Phase 8: text mismatch: %q vs %q", text2, text)
+			t.Errorf("Phase 9: text mismatch: %q vs %q", text2, text)
 		}
 	}
 	if err := doc.ResetSelection(); err != nil {
-		t.Errorf("Phase 8: ResetSelection: %v", err)
+		t.Errorf("Phase 9: ResetSelection: %v", err)
 	}
 
 	// Smoke calls — assert only that the cgo path doesn't crash.
@@ -429,13 +429,13 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	// available (a follow-up phase); for now the methods are
 	// exercised with (0, 0).
 	if err := doc.SetTextSelection(SetTextSelectionStart, 0, 0); err != nil {
-		t.Errorf("Phase 8: SetTextSelection: %v", err)
+		t.Errorf("Phase 9: SetTextSelection: %v", err)
 	}
 	if err := doc.SetGraphicSelection(SetGraphicSelectionEnd, 0, 0); err != nil {
-		t.Errorf("Phase 8: SetGraphicSelection: %v", err)
+		t.Errorf("Phase 9: SetGraphicSelection: %v", err)
 	}
 	if err := doc.SetBlockedCommandList(0, ""); err != nil {
-		t.Errorf("Phase 8: SetBlockedCommandList: %v", err)
+		t.Errorf("Phase 9: SetBlockedCommandList: %v", err)
 	}
 
 	// --- Phase 9: office-level listener smoke ---
