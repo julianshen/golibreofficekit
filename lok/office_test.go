@@ -150,6 +150,36 @@ type fakeBackend struct {
 	sendDialogEventErr         error
 	sendContentControlEventErr error
 	sendFormFieldEventErr      error
+
+	// Phase 11: advanced + misc.
+	lastMacroURL         string
+	macroErr             error
+	lastSignURL          string
+	lastSignCert         []byte
+	lastSignKey          []byte
+	signErr              error
+	filterTypesResult    string
+	filterTypesErr       error
+	lastInsertCert       []byte
+	lastInsertKey        []byte
+	insertCertErr        error
+	lastAddCert          []byte
+	addCertErr           error
+	signatureStateResult int
+	signatureStateErr    error
+	lastPasteMime        string
+	lastPasteData        []byte
+	pasteErr             error
+	lastSelectPart       int
+	lastSelectSelected   bool
+	lastMovePos          int
+	lastMoveDup          bool
+	lastRenderFontName   string
+	lastRenderFontChar   string
+	renderFontBuf        []byte
+	renderFontW          int
+	renderFontH          int
+	renderFontErr        error
 }
 
 const fakeViewIDBase = 1000
@@ -766,4 +796,61 @@ func (f *fakeBackend) PaintWindowDPI(_ documentHandle, windowID uint32, _ []byte
 func (f *fakeBackend) PaintWindowForView(_ documentHandle, windowID uint32, _ int, _ []byte, _, _, _, _ int, _ float64) error {
 	f.lastWindowID = windowID
 	return nil
+}
+
+// --- Phase 11: advanced + misc ---
+
+func (f *fakeBackend) OfficeRunMacro(_ officeHandle, url string) error {
+	f.lastMacroURL = url
+	return f.macroErr
+}
+
+func (f *fakeBackend) OfficeSignDocument(_ officeHandle, url string, cert, key []byte) error {
+	f.lastSignURL = url
+	f.lastSignCert = cert
+	f.lastSignKey = key
+	return f.signErr
+}
+
+func (f *fakeBackend) OfficeGetFilterTypes(officeHandle) (string, error) {
+	return f.filterTypesResult, f.filterTypesErr
+}
+
+func (f *fakeBackend) DocumentInsertCertificate(_ documentHandle, cert, key []byte) error {
+	f.lastInsertCert = cert
+	f.lastInsertKey = key
+	return f.insertCertErr
+}
+
+func (f *fakeBackend) DocumentAddCertificate(_ documentHandle, cert []byte) error {
+	f.lastAddCert = cert
+	return f.addCertErr
+}
+
+func (f *fakeBackend) DocumentGetSignatureState(documentHandle) (int, error) {
+	return f.signatureStateResult, f.signatureStateErr
+}
+
+func (f *fakeBackend) DocumentPaste(_ documentHandle, mime string, data []byte) error {
+	f.lastPasteMime = mime
+	f.lastPasteData = data
+	return f.pasteErr
+}
+
+func (f *fakeBackend) DocumentSelectPart(_ documentHandle, part int, selected bool) error {
+	f.lastSelectPart = part
+	f.lastSelectSelected = selected
+	return nil
+}
+
+func (f *fakeBackend) DocumentMoveSelectedParts(_ documentHandle, pos int, dup bool) error {
+	f.lastMovePos = pos
+	f.lastMoveDup = dup
+	return nil
+}
+
+func (f *fakeBackend) DocumentRenderFont(_ documentHandle, fontName, char string) ([]byte, int, int, error) {
+	f.lastRenderFontName = fontName
+	f.lastRenderFontChar = char
+	return f.renderFontBuf, f.renderFontW, f.renderFontH, f.renderFontErr
 }

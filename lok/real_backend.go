@@ -225,8 +225,17 @@ func (realBackend) DocumentPostUnoCommand(d documentHandle, cmd, args string, no
 // counterparts. New realBackend forwarders that surface a lokc error
 // should pipe through here so the translation stays in one place.
 func mapLokErr(err error) error {
-	if errors.Is(err, lokc.ErrUnsupported) {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, lokc.ErrUnsupported):
 		return ErrUnsupported
+	case errors.Is(err, lokc.ErrNilOffice):
+		return ErrClosed
+	case errors.Is(err, lokc.ErrMacroFailed):
+		return ErrMacroFailed
+	case errors.Is(err, lokc.ErrSignFailed):
+		return ErrSignFailed
 	}
 	return err
 }
@@ -336,6 +345,51 @@ func (realBackend) PaintWindowDPI(d documentHandle, windowID uint32, buf []byte,
 
 func (realBackend) PaintWindowForView(d documentHandle, windowID uint32, view int, buf []byte, x, y, pxW, pxH int, dpiScale float64) error {
 	return mapLokErr(lokc.DocumentPaintWindowForView(mustDoc(d).d, windowID, view, buf, x, y, pxW, pxH, dpiScale))
+}
+
+// --- Advanced + gap-fill operations ---
+
+func (realBackend) OfficeRunMacro(h officeHandle, url string) error {
+	return mapLokErr(lokc.OfficeRunMacro(must(h).h, url))
+}
+
+func (realBackend) OfficeSignDocument(h officeHandle, url string, cert, key []byte) error {
+	return mapLokErr(lokc.OfficeSignDocument(must(h).h, url, cert, key))
+}
+
+func (realBackend) OfficeGetFilterTypes(h officeHandle) (string, error) {
+	v, err := lokc.OfficeGetFilterTypes(must(h).h)
+	return v, mapLokErr(err)
+}
+
+func (realBackend) DocumentInsertCertificate(d documentHandle, cert, key []byte) error {
+	return mapLokErr(lokc.DocumentInsertCertificate(mustDoc(d).d, cert, key))
+}
+
+func (realBackend) DocumentAddCertificate(d documentHandle, cert []byte) error {
+	return mapLokErr(lokc.DocumentAddCertificate(mustDoc(d).d, cert))
+}
+
+func (realBackend) DocumentGetSignatureState(d documentHandle) (int, error) {
+	v, err := lokc.DocumentGetSignatureState(mustDoc(d).d)
+	return v, mapLokErr(err)
+}
+
+func (realBackend) DocumentPaste(d documentHandle, mimeType string, data []byte) error {
+	return mapLokErr(lokc.DocumentPaste(mustDoc(d).d, mimeType, data))
+}
+
+func (realBackend) DocumentSelectPart(d documentHandle, part int, selected bool) error {
+	return mapLokErr(lokc.DocumentSelectPart(mustDoc(d).d, part, selected))
+}
+
+func (realBackend) DocumentMoveSelectedParts(d documentHandle, position int, duplicate bool) error {
+	return mapLokErr(lokc.DocumentMoveSelectedParts(mustDoc(d).d, position, duplicate))
+}
+
+func (realBackend) DocumentRenderFont(d documentHandle, fontName, char string) ([]byte, int, int, error) {
+	buf, w, h, err := lokc.DocumentRenderFont(mustDoc(d).d, fontName, char)
+	return buf, w, h, mapLokErr(err)
 }
 
 var _ backend = realBackend{}
