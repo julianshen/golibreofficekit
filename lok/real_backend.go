@@ -224,6 +224,13 @@ func (realBackend) DocumentPostUnoCommand(d documentHandle, cmd, args string, no
 // mapLokErr translates internal lokc sentinels to their public lok
 // counterparts. New realBackend forwarders that surface a lokc error
 // should pipe through here so the translation stays in one place.
+//
+// ErrNilOffice / ErrNilDocument indicate a zero-valued handle reached
+// the C layer — the public-API methods always check o.closed / d.closed
+// under the mutex first, so a real-world path here is a programmer
+// error (zero-value Office{} or use-after-free), not the documented
+// lifecycle "user called Close()". Surfaced as *LOKError so callers
+// don't accidentally errors.Is(err, ErrClosed) past a real bug.
 func mapLokErr(err error) error {
 	switch {
 	case err == nil:
@@ -231,7 +238,9 @@ func mapLokErr(err error) error {
 	case errors.Is(err, lokc.ErrUnsupported):
 		return ErrUnsupported
 	case errors.Is(err, lokc.ErrNilOffice):
-		return ErrClosed
+		return &LOKError{Detail: "nil office handle reached backend; programmer error", err: err}
+	case errors.Is(err, lokc.ErrNilDocument):
+		return &LOKError{Detail: "nil document handle reached backend; programmer error", err: err}
 	case errors.Is(err, lokc.ErrMacroFailed):
 		return ErrMacroFailed
 	case errors.Is(err, lokc.ErrSignFailed):
