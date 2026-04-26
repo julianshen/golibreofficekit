@@ -210,6 +210,15 @@ func requireInt32XY(op string, x, y int64) error {
 	return nil
 }
 
+// requireInt32 returns *LOKError if v exceeds int32 range. name labels
+// the offending parameter in the error message.
+func requireInt32(op, name string, v int64) error {
+	if v > math.MaxInt32 || v < math.MinInt32 {
+		return &LOKError{Op: op, Detail: fmt.Sprintf("%s out of int32 range: %s=%d", name, name, v)}
+	}
+	return nil
+}
+
 // requireInt32Key returns *LOKError if charCode or keyCode exceeds
 // int32 range. LOK's postKeyEvent takes C int (32-bit on LP64);
 // without this guard values outside that range would silently

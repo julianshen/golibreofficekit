@@ -283,6 +283,61 @@ func (realBackend) RegisterDocumentCallback(d documentHandle, handle uintptr) er
 	return mapLokErr(lokc.RegisterDocumentCallback(mustDoc(d).d, lokc.DispatchHandleFromUintptr(handle)))
 }
 
+// --- Command & window operations ---
+
+func (realBackend) GetCommandValues(d documentHandle, command string) (string, error) {
+	v, err := lokc.DocumentGetCommandValues(mustDoc(d).d, command)
+	return v, mapLokErr(err)
+}
+
+func (realBackend) CompleteFunction(d documentHandle, name string) error {
+	return mapLokErr(lokc.DocumentCompleteFunction(mustDoc(d).d, name))
+}
+
+func (realBackend) SendDialogEvent(d documentHandle, windowID uint64, argsJSON string) error {
+	return mapLokErr(lokc.DocumentSendDialogEvent(mustDoc(d).d, windowID, argsJSON))
+}
+
+func (realBackend) SendContentControlEvent(d documentHandle, argsJSON string) error {
+	return mapLokErr(lokc.DocumentSendContentControlEvent(mustDoc(d).d, argsJSON))
+}
+
+func (realBackend) SendFormFieldEvent(d documentHandle, argsJSON string) error {
+	return mapLokErr(lokc.DocumentSendFormFieldEvent(mustDoc(d).d, argsJSON))
+}
+
+func (realBackend) PostWindowKeyEvent(d documentHandle, windowID uint32, typ, charCode, keyCode int) error {
+	return mapLokErr(lokc.DocumentPostWindowKeyEvent(mustDoc(d).d, windowID, typ, charCode, keyCode))
+}
+
+func (realBackend) PostWindowMouseEvent(d documentHandle, windowID uint32, typ int, x, y int64, count int, buttons, mods int) error {
+	return mapLokErr(lokc.DocumentPostWindowMouseEvent(mustDoc(d).d, windowID, typ, x, y, count, buttons, mods))
+}
+
+func (realBackend) PostWindowGestureEvent(d documentHandle, windowID uint32, typ string, x, y, offset int64) error {
+	return mapLokErr(lokc.DocumentPostWindowGestureEvent(mustDoc(d).d, windowID, typ, x, y, offset))
+}
+
+func (realBackend) PostWindowExtTextInputEvent(d documentHandle, windowID uint32, typ int, text string) error {
+	return mapLokErr(lokc.DocumentPostWindowExtTextInputEvent(mustDoc(d).d, windowID, typ, text))
+}
+
+func (realBackend) ResizeWindow(d documentHandle, windowID uint32, w, h int) error {
+	return mapLokErr(lokc.DocumentResizeWindow(mustDoc(d).d, windowID, w, h))
+}
+
+func (realBackend) PaintWindow(d documentHandle, windowID uint32, buf []byte, x, y, pxW, pxH int) error {
+	return mapLokErr(lokc.DocumentPaintWindow(mustDoc(d).d, windowID, buf, x, y, pxW, pxH))
+}
+
+func (realBackend) PaintWindowDPI(d documentHandle, windowID uint32, buf []byte, x, y, pxW, pxH int, dpiScale float64) error {
+	return mapLokErr(lokc.DocumentPaintWindowDPI(mustDoc(d).d, windowID, buf, x, y, pxW, pxH, dpiScale))
+}
+
+func (realBackend) PaintWindowForView(d documentHandle, windowID uint32, view int, buf []byte, x, y, pxW, pxH int, dpiScale float64) error {
+	return mapLokErr(lokc.DocumentPaintWindowForView(mustDoc(d).d, windowID, view, buf, x, y, pxW, pxH, dpiScale))
+}
+
 var _ backend = realBackend{}
 
 func init() {

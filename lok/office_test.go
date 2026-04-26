@@ -133,6 +133,23 @@ type fakeBackend struct {
 	lastDocumentCallbackHandle uintptr
 	registerOfficeCallbackErr  error
 	registerDocCallbackErr     error
+
+	// Phase 10: command/window tracking.
+	lastCommand                string
+	lastCommandResult          string
+	getCommandValuesErr        error
+	completeFunctionErr        error
+	lastWindowID               uint32
+	lastDialogWindowID         uint64
+	lastDialogArgs             string
+	lastContentControlArgs     string
+	lastFormFieldArgs          string
+	lastGestureType            string
+	lastExtTextInputType       int
+	lastExtTextInputText       string
+	sendDialogEventErr         error
+	sendContentControlEventErr error
+	sendFormFieldEventErr      error
 }
 
 const fakeViewIDBase = 1000
@@ -677,4 +694,76 @@ func (f *fakeBackend) RegisterOfficeCallback(_ officeHandle, h uintptr) error {
 func (f *fakeBackend) RegisterDocumentCallback(_ documentHandle, h uintptr) error {
 	f.lastDocumentCallbackHandle = h
 	return f.registerDocCallbackErr
+}
+
+func (f *fakeBackend) GetCommandValues(_ documentHandle, cmd string) (string, error) {
+	f.lastCommand = cmd
+	if f.getCommandValuesErr != nil {
+		return "", f.getCommandValuesErr
+	}
+	return f.lastCommandResult, nil
+}
+
+func (f *fakeBackend) CompleteFunction(_ documentHandle, name string) error {
+	f.lastCommand = "CompleteFunction:" + name
+	return f.completeFunctionErr
+}
+
+func (f *fakeBackend) SendDialogEvent(_ documentHandle, windowID uint64, argsJSON string) error {
+	f.lastDialogWindowID = windowID
+	f.lastDialogArgs = argsJSON
+	return f.sendDialogEventErr
+}
+
+func (f *fakeBackend) SendContentControlEvent(_ documentHandle, argsJSON string) error {
+	f.lastContentControlArgs = argsJSON
+	return f.sendContentControlEventErr
+}
+
+func (f *fakeBackend) SendFormFieldEvent(_ documentHandle, argsJSON string) error {
+	f.lastFormFieldArgs = argsJSON
+	return f.sendFormFieldEventErr
+}
+
+func (f *fakeBackend) PostWindowKeyEvent(_ documentHandle, windowID uint32, typ, charCode, keyCode int) error {
+	f.lastWindowID = windowID
+	return nil
+}
+
+func (f *fakeBackend) PostWindowMouseEvent(_ documentHandle, windowID uint32, typ int, x, y int64, count int, buttons, mods int) error {
+	f.lastWindowID = windowID
+	return nil
+}
+
+func (f *fakeBackend) PostWindowGestureEvent(_ documentHandle, windowID uint32, typ string, _, _, _ int64) error {
+	f.lastWindowID = windowID
+	f.lastGestureType = typ
+	return nil
+}
+
+func (f *fakeBackend) PostWindowExtTextInputEvent(_ documentHandle, windowID uint32, typ int, text string) error {
+	f.lastWindowID = windowID
+	f.lastExtTextInputType = typ
+	f.lastExtTextInputText = text
+	return nil
+}
+
+func (f *fakeBackend) ResizeWindow(_ documentHandle, windowID uint32, w, h int) error {
+	f.lastWindowID = windowID
+	return nil
+}
+
+func (f *fakeBackend) PaintWindow(_ documentHandle, windowID uint32, _ []byte, _, _, _, _ int) error {
+	f.lastWindowID = windowID
+	return nil
+}
+
+func (f *fakeBackend) PaintWindowDPI(_ documentHandle, windowID uint32, _ []byte, _, _, _, _ int, _ float64) error {
+	f.lastWindowID = windowID
+	return nil
+}
+
+func (f *fakeBackend) PaintWindowForView(_ documentHandle, windowID uint32, _ int, _ []byte, _, _, _, _ int, _ float64) error {
+	f.lastWindowID = windowID
+	return nil
 }

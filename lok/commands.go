@@ -3,6 +3,7 @@
 package lok
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 )
@@ -42,4 +43,92 @@ func (d *Document) InsertTable(rows, cols int) error {
 	}
 	args := fmt.Sprintf(`{"Columns":{"type":"long","value":%d},"Rows":{"type":"long","value":%d}}`, cols, rows)
 	return d.PostUnoCommand(".uno:InsertTable", args, false)
+}
+
+// GetCommandValues returns a JSON document describing the current
+// state/possible values for command. The returned JSON is specific to
+// the command; see LibreOfficeKitEnums.h for command names and
+// expected payload formats.
+//
+// Common commands:
+//
+//	".uno:Save"                     — always enabled when document is modifiable
+//	".uno:Undo" / ".uno:Redo"       — enabled/disabled state
+//	".uno:Bold" / ".uno:Italic"     — checked state
+//	".uno:FontName"                 — list of available fonts
+//	".uno:StyleApply"               — list of styles
+//	".uno:CharFontName"             — current font
+//
+// Returns ErrUnsupported if LOK does not implement getCommandValues for this
+// build. Returns a non-nil error for invalid commands or closed documents.
+func (d *Document) GetCommandValues(command string) (json.RawMessage, error) {
+	unlock, err := d.guard()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	s, err := d.office.be.GetCommandValues(d.h, command)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(s), nil
+}
+
+// CompleteFunction attempts to complete a function (formula). It is
+// intended for Calc; behaviour on other document types is
+// implementation-defined by LO.
+func (d *Document) CompleteFunction(name string) error {
+	unlock, err := d.guard()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return d.office.be.CompleteFunction(d.h, name)
+}
+
+// IsCommandEnabled returns whether command is currently enabled.
+// Returns an error only if the command JSON cannot be parsed. If neither
+// "enabled" nor "state" is present as a boolean, returns (false, nil).
+func (d *Document) IsCommandEnabled(cmd string) (bool, error) {
+	raw, err := d.GetCommandValues(cmd)
+	if err != nil {
+		return false, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return false, err
+	}
+	if v, ok := m["enabled"].(bool); ok {
+		return v, nil
+	}
+	if v, ok := m["state"].(bool); ok {
+		return v, nil
+	}
+	return false, nil
+}
+
+// GetFontNames returns the list of available font names.
+// Returns an error if the command JSON cannot be parsed. When the "value"
+// field is absent or not a list, returns an empty slice (not nil).
+// Non-string entries in the list are skipped.
+func (d *Document) GetFontNames() ([]string, error) {
+	raw, err := d.GetCommandValues(".uno:FontName")
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, err
+	}
+	v, ok := m["value"].([]any)
+	if !ok {
+		return []string{}, nil
+	}
+	names := make([]string, 0, len(v))
+	for _, x := range v {
+		if s, ok := x.(string); ok {
+			names = append(names, s)
+		}
+	}
+	return names, nil
 }

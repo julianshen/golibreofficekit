@@ -4,6 +4,7 @@ package lok
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -504,6 +505,53 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 		}
 	}
 
+	// --- Phase 10: command values ---
+	raw, err := doc.GetCommandValues(".uno:Save")
+	if err != nil {
+		t.Errorf("Phase 10: GetCommandValues(.uno:Save): %v", err)
+	} else {
+		t.Logf("Phase 10: .uno:Save: %s", raw)
+		var m map[string]any
+		if jerr := json.Unmarshal(raw, &m); jerr != nil {
+			t.Errorf("Phase 10: GetCommandValues returned invalid JSON: %v", jerr)
+		}
+	}
+
+	if err := doc.CompleteFunction("SUM"); err != nil && !errors.Is(err, ErrUnsupported) {
+		t.Errorf("Phase 10: CompleteFunction: %v", err)
+	}
+
+	// --- Phase 10: window event smoke ---
+	gotID := make(chan uint32, 1)
+	unsub, err := doc.AddListener(func(e Event) {
+		if e.Type == EventTypeWindow {
+			select {
+			case gotID <- parseWindowIDFromPayload(e.Payload):
+			default:
+			}
+		}
+	})
+	if err != nil {
+		t.Fatalf("Phase 10: AddListener: %v", err)
+	}
+	defer unsub()
+
+	if err := doc.PostUnoCommand(".uno:DesignerDialog", "", false); err != nil {
+		t.Errorf("Phase 10: PostUnoCommand DesignerDialog: %v", err)
+	}
+
+	select {
+	case wid := <-gotID:
+		if wid == 0 {
+			t.Errorf("Phase 10: parsed window ID was 0 — payload format may have shifted")
+		}
+		if err := doc.ResizeWindow(wid, 200, 200); err != nil {
+			t.Errorf("Phase 10: ResizeWindow: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Logf("Phase 10: no EventTypeWindow within deadline; skipping window-event smoke")
+	}
+
 	// LoadFromReader deliberately comes last. Loading a second
 	// document into the same office before a view dance on the first
 	// doc puts LO's layout engine in a state where the subsequent
@@ -524,4 +572,23 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	if got := doc2.Type(); got != TypeText {
 		t.Errorf("reader-loaded Type()=%v, want Text", got)
 	}
+}
+
+func parseWindowIDFromPayload(payload string) uint32 {
+	var m struct {
+		ID any `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(payload), &m); err != nil {
+		return 0
+	}
+	switch v := m.ID.(type) {
+	case float64:
+		return uint32(v)
+	case string:
+		var id uint64
+		if _, err := fmt.Sscanf(v, "%d", &id); err == nil {
+			return uint32(id)
+		}
+	}
+	return 0
 }
