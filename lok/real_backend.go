@@ -283,7 +283,7 @@ func (realBackend) RegisterDocumentCallback(d documentHandle, handle uintptr) er
 	return mapLokErr(lokc.RegisterDocumentCallback(mustDoc(d).d, lokc.DispatchHandleFromUintptr(handle)))
 }
 
-// --- Command & window operations (Phase 10) ---
+// --- Command & window operations ---
 
 func (realBackend) GetCommandValues(d documentHandle, command string) (string, error) {
 	v, err := lokc.DocumentGetCommandValues(mustDoc(d).d, command)

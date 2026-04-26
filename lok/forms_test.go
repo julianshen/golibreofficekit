@@ -12,11 +12,15 @@ func TestSendDialogEvent(t *testing.T) {
 	_, doc := loadFakeDoc(t, fb)
 
 	args := `{"type":"dialog","action":"execute"}`
-	if err := doc.SendDialogEvent(42, args); err != nil {
+	const wid uint64 = 1 << 33 // verify uint64 round-trips end-to-end
+	if err := doc.SendDialogEvent(wid, args); err != nil {
 		t.Fatal(err)
 	}
-	if fb.lastWindowID != 42 {
-		t.Errorf("lastWindowID=%d", fb.lastWindowID)
+	if fb.lastDialogWindowID != wid {
+		t.Errorf("lastDialogWindowID=%d, want %d", fb.lastDialogWindowID, wid)
+	}
+	if fb.lastDialogArgs != args {
+		t.Errorf("lastDialogArgs=%q, want %q", fb.lastDialogArgs, args)
 	}
 }
 
@@ -47,6 +51,9 @@ func TestSendContentControlEvent(t *testing.T) {
 	if err := doc.SendContentControlEvent(args); err != nil {
 		t.Fatal(err)
 	}
+	if fb.lastContentControlArgs != args {
+		t.Errorf("lastContentControlArgs=%q, want %q", fb.lastContentControlArgs, args)
+	}
 }
 
 func TestSendContentControlEvent_BackendError(t *testing.T) {
@@ -75,6 +82,9 @@ func TestSendFormFieldEvent(t *testing.T) {
 	args := `{"field":"name","action":"changed"}`
 	if err := doc.SendFormFieldEvent(args); err != nil {
 		t.Fatal(err)
+	}
+	if fb.lastFormFieldArgs != args {
+		t.Errorf("lastFormFieldArgs=%q, want %q", fb.lastFormFieldArgs, args)
 	}
 }
 

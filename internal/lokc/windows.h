@@ -15,7 +15,7 @@ int loke_post_window_gesture_event(void* doc, uint32_t window_id, const char* ty
 int loke_post_window_ext_text_input_event(void* doc, uint32_t window_id, int typ, const char* text);
 int loke_resize_window(void* doc, uint32_t window_id, int w, int h);
 
-// Window paint — x, y are top-left of source rect in twips
+// Window paint — x, y, px_w, px_h are in the window's own coordinate space
 int loke_paint_window(void* doc, uint32_t window_id, void* buf, int x, int y, int px_w, int px_h);
 int loke_paint_window_dpi(void* doc, uint32_t window_id, void* buf, int x, int y, int px_w, int px_h, double dpiscale);
 int loke_paint_window_for_view(void* doc, uint32_t window_id, int view_id, void* buf, int x, int y, int px_w, int px_h, double dpiscale);

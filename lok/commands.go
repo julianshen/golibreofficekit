@@ -74,9 +74,9 @@ func (d *Document) GetCommandValues(command string) (json.RawMessage, error) {
 	return json.RawMessage(s), nil
 }
 
-// CompleteFunction attempts to complete a function (formula) in a spreadsheet.
-// name is the function name. Returns an error if the function cannot be completed.
-// This is a no-op for non-Calc documents.
+// CompleteFunction attempts to complete a function (formula). It is
+// intended for Calc; behaviour on other document types is
+// implementation-defined by LO.
 func (d *Document) CompleteFunction(name string) error {
 	unlock, err := d.guard()
 	if err != nil {

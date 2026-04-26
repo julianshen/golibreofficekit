@@ -536,10 +536,15 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	}
 	defer unsub()
 
-	_ = doc.PostUnoCommand(".uno:DesignerDialog", "", false)
+	if err := doc.PostUnoCommand(".uno:DesignerDialog", "", false); err != nil {
+		t.Errorf("Phase 10: PostUnoCommand DesignerDialog: %v", err)
+	}
 
 	select {
 	case wid := <-gotID:
+		if wid == 0 {
+			t.Errorf("Phase 10: parsed window ID was 0 — payload format may have shifted")
+		}
 		if err := doc.ResizeWindow(wid, 200, 200); err != nil {
 			t.Errorf("Phase 10: ResizeWindow: %v", err)
 		}

@@ -4,6 +4,7 @@ package lok
 
 import (
 	"errors"
+	"math"
 	"testing"
 )
 
@@ -55,11 +56,37 @@ func TestPostWindowGestureEvent(t *testing.T) {
 	fb := &fakeBackend{}
 	_, doc := loadFakeDoc(t, fb)
 
-	if err := doc.PostWindowGestureEvent(789, "pan", 10, 20, 5); err != nil {
+	if err := doc.PostWindowGestureEvent(789, "panBegin", 10, 20, 5); err != nil {
 		t.Fatal(err)
 	}
 	if fb.lastWindowID != 789 {
 		t.Errorf("lastWindowID=%d", fb.lastWindowID)
+	}
+	if fb.lastGestureType != "panBegin" {
+		t.Errorf("lastGestureType=%q, want panBegin", fb.lastGestureType)
+	}
+}
+
+func TestPostWindowGestureEvent_Int32Overflow(t *testing.T) {
+	fb := &fakeBackend{}
+	_, doc := loadFakeDoc(t, fb)
+
+	cases := []struct {
+		name          string
+		x, y, offset  int64
+	}{
+		{"x overflow", math.MaxInt32 + 1, 0, 0},
+		{"y overflow", 0, math.MaxInt32 + 1, 0},
+		{"offset overflow", 0, 0, math.MaxInt32 + 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := doc.PostWindowGestureEvent(1, "pan", tc.x, tc.y, tc.offset)
+			var lokErr *LOKError
+			if !errors.As(err, &lokErr) || lokErr.Op != "PostWindowGestureEvent" {
+				t.Errorf("want *LOKError{Op:PostWindowGestureEvent}, got %v", err)
+			}
+		})
 	}
 }
 
@@ -82,6 +109,12 @@ func TestPostWindowExtTextInputEvent(t *testing.T) {
 	}
 	if fb.lastWindowID != 321 {
 		t.Errorf("lastWindowID=%d", fb.lastWindowID)
+	}
+	if fb.lastExtTextInputType != 1 {
+		t.Errorf("lastExtTextInputType=%d, want 1", fb.lastExtTextInputType)
+	}
+	if fb.lastExtTextInputText != "hello" {
+		t.Errorf("lastExtTextInputText=%q, want hello", fb.lastExtTextInputText)
 	}
 }
 

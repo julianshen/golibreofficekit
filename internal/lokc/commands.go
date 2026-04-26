@@ -13,9 +13,9 @@ import (
 	"unsafe"
 )
 
-// DocumentGetCommandValues calls pClass->getCommandValues.
-// Returns the JSON string on success, or an error.
-// The returned string must be freed by the caller via C.free.
+// DocumentGetCommandValues calls pClass->getCommandValues and returns
+// the JSON payload as a Go string. The wrapper frees the LOK-allocated
+// C buffer before returning; callers do not own any C memory.
 func DocumentGetCommandValues(d DocumentHandle, command string) (string, error) {
 	if !d.IsValid() {
 		return "", ErrNilDocument
