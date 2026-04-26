@@ -86,6 +86,18 @@ type backend interface {
 	PaintWindow(d documentHandle, windowID uint32, buf []byte, x, y, pxW, pxH int) error
 	PaintWindowDPI(d documentHandle, windowID uint32, buf []byte, x, y, pxW, pxH int, dpiScale float64) error
 	PaintWindowForView(d documentHandle, windowID uint32, view int, buf []byte, x, y, pxW, pxH int, dpiScale float64) error
+
+	// Advanced + gap-fill operations (Phase 11).
+	OfficeRunMacro(h officeHandle, url string) error
+	OfficeSignDocument(h officeHandle, url string, cert, key []byte) error
+	OfficeGetFilterTypes(h officeHandle) (string, error)
+	DocumentInsertCertificate(d documentHandle, cert, key []byte) error
+	DocumentAddCertificate(d documentHandle, cert []byte) error
+	DocumentGetSignatureState(d documentHandle) (int, error)
+	DocumentPaste(d documentHandle, mimeType string, data []byte) error
+	DocumentSelectPart(d documentHandle, part int, selected bool) error
+	DocumentMoveSelectedParts(d documentHandle, position int, duplicate bool) error
+	DocumentRenderFont(d documentHandle, fontName, char string) (buf []byte, w, h int, err error)
 }
 
 // clipboardItemInternal mirrors the public lok.ClipboardItem (and

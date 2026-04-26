@@ -11,6 +11,9 @@ var (
 	ErrInvalidOption       = errors.New("lok: invalid load option (contains reserved character)")
 	ErrViewCreateFailed    = errors.New("lok: view creation failed")
 	ErrUnsupported         = errors.New("lok: operation not supported by this LibreOfficeKit build")
+	ErrMacroFailed         = errors.New("lok: macro execution failed")
+	ErrSignFailed          = errors.New("lok: document signing failed")
+	ErrPasteFailed         = errors.New("lok: paste rejected by LibreOffice")
 )
 
 // LOKError wraps an error string returned by LibreOffice itself.
