@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Bind LibreOfficeKit's command-value query API (`getCommandValues`, `getCommandValues` for documents) and window-level APIs (window events, window paint, dialog/content-control/form-field events) so users can query command states and interact with windows from Go.
+**Goal:** Bind LibreOfficeKit's command-value query API (`getCommandValues`, `completeFunction`) and window-level APIs (window events, window paint, dialog/content-control/form-field events) so users can query command states and interact with windows from Go.
 
 **Architecture:** Same four-layer pattern as Phases 3–9. `internal/lokc` owns the C shims for command/window functions; `lok` owns the public API, error mapping, and JSON handling.
 
@@ -18,19 +18,19 @@
 
 Files created:
 
-- `lok/commands.go` — `GetCommandValues`, `CompleteFunction`, typed helpers.
-- `lok/commands_test.go` — unit tests for command values.
-- `lok/windows.go` — window events, paint, resize, font subset.
+- `lok/windows.go` — window events, paint, resize, font subset stubs.
 - `lok/windows_test.go` — unit tests for window APIs.
 - `lok/forms.go` — dialog/content-control/form-field event helpers.
 - `lok/forms_test.go` — unit tests for form events.
-- `internal/lokc/commands.c` — C shims for `getCommandValues`, `completeFunction`, etc.
+- `internal/lokc/commands.c` — C shims for `getCommandValues`, `completeFunction`.
 - `internal/lokc/commands.h` — declarations for above.
 - `internal/lokc/windows.c` — C shims for window paint/resize/events.
 - `internal/lokc/windows.h` — declarations for above.
 
 Files modified:
 
+- `lok/commands.go` — **append** `GetCommandValues`, `CompleteFunction`, typed helpers.
+- `lok/commands_test.go` — **append** unit tests for command values.
 - `lok/backend.go` — add new interface methods.
 - `lok/real_backend.go` — forwarders for command/window methods.
 - `lok/document.go` — attach new methods to `Document`.
@@ -52,23 +52,20 @@ Append to `backend` interface in `lok/backend.go`:
 ```go
 // Command & window operations (Phase 10).
 GetCommandValues(d documentHandle, command string) (string, error)
-CompleteFunction(d documentHandle, part int, name string) error
+CompleteFunction(d documentHandle, name string) error
 SendDialogEvent(d documentHandle, windowID uint64, argsJSON string) error
 SendContentControlEvent(d documentHandle, argsJSON string) error
 SendFormFieldEvent(d documentHandle, argsJSON string) error
-PostWindowKeyEvent(d documentHandle, windowID uint64, typ int, charCode, keyCode int) error
-PostWindowMouseEvent(d documentHandle, windowID uint64, typ int, x, y int64, count int, buttons, mods int) error
-PostWindowGestureEvent(d documentHandle, windowID uint64, typ string, x, y, offset int64) error
-PostWindowExtTextInputEvent(d documentHandle, windowID uint64, typ int, text string) error
-ResizeWindow(d documentHandle, windowID uint64, w, h int) error
-PaintWindow(d documentHandle, windowID uint64, buf []byte, pxW, pxH int) error
-PaintWindowDPI(d documentHandle, windowID uint64, buf []byte, pxW, pxH int, dpiScale float64) error
-PaintWindowForView(d documentHandle, windowID uint64, view viewHandle, buf []byte, pxW, pxH int, dpiScale float64) error
-ResetWindow(d documentHandle, windowID uint64) error
-GetFontSubset(d documentHandle, fontName string) ([]byte, error)
+PostWindowKeyEvent(d documentHandle, windowID uint32, typ int, charCode, keyCode int) error
+PostWindowMouseEvent(d documentHandle, windowID uint32, typ int, x, y int64, count int, buttons, mods int) error
+PostWindowGestureEvent(d documentHandle, windowID uint32, typ string, x, y, offset int64) error
+PostWindowExtTextInputEvent(d documentHandle, windowID uint32, typ int, text string) error
+ResizeWindow(d documentHandle, windowID uint32, w, h int) error
+PaintWindow(d documentHandle, windowID uint32, buf []byte, x, y, pxW, pxH int) error
+PaintWindowDPI(d documentHandle, windowID uint32, buf []byte, x, y, pxW, pxH int, dpiScale float64) error
+PaintWindowForView(d documentHandle, windowID uint32, view viewHandle, buf []byte, x, y, pxW, pxH int, dpiScale float64) error
+// NOTE: ResetWindow and GetFontSubset are NOT in LOK 24.8 — omitted.
 ```
-
-Note: Use `[]byte` for buffers; keep paint methods consistent with `PaintTileRaw`.
 
 - [ ] **Step 2: Extend fakeBackend**
 
@@ -78,8 +75,9 @@ In `lok/office_test.go`, add fields to `fakeBackend`:
 // Phase 10: command/window tracking.
 lastCommand           string
 lastCommandResult     string
-lastCommandErr        error
-lastWindowID          uint64
+getCommandValuesErr  error
+lastWindowID          uint32
+lastWindowX, lastWindowY int
 lastWindowBuf         []byte
 lastWindowFontName    string
 lastWindowFontData    []byte
@@ -95,6 +93,17 @@ func (f *fakeBackend) GetCommandValues(_ documentHandle, cmd string) (string, er
     }
     return f.lastCommandResult, nil
 }
+
+func (f *fakeBackend) CompleteFunction(_ documentHandle, part int, name string) error {
+    f.lastCommand = "CompleteFunction:" + name
+    return nil
+}
+
+func (f *fakeBackend) PostWindowKeyEvent(_ documentHandle, windowID uint32, typ, charCode, keyCode int) error {
+    f.lastWindowID = windowID
+    return nil
+}
+// ... similar stubs for other window methods ...
 ```
 
 - [ ] **Step 3: Build to verify compilation**
@@ -169,16 +178,16 @@ int loke_complete_function(void* doc, int part, const char* name) {
 
 - [ ] **Step 3: Update `lokc.go` to include commands**
 
-Add to the cgo preamble section (or create a separate file included from `lokc.go`):
+The existing `lokc.go` already has a cgo preamble. Add the new headers:
 
 ```go
 /*
 #cgo CFLAGS: -I${SRCDIR}/../../third_party/lok -DLOK_USE_UNSTABLE_API
 #include <stdlib.h>
 #include "LibreOfficeKit/LibreOfficeKit.h"
-#include "callback.h"  // existing
-#include "commands.h"  // new
-#include "windows.h"   // new (will create)
+#include "callback.h"
+#include "commands.h"   // new
+#include "windows.h"    // new
 */
 import "C"
 ```
@@ -210,21 +219,22 @@ extern "C" {
 #endif
 
 // Window events
-int loke_post_window_key_event(void* doc, uint64_t window_id, int type, int char_code, int key_code);
-int loke_post_window_mouse_event(void* doc, uint64_t window_id, int type, int64_t x, int64_t y, int count, int buttons, int mods);
-int loke_post_window_gesture_event(void* doc, uint64_t window_id, const char* typ, int64_t x, int64_t y, int64_t offset);
-int loke_post_window_ext_text_input_event(void* doc, uint64_t window_id, int typ, const char* text);
-int loke_resize_window(void* doc, uint64_t window_id, int w, int h);
+int loke_post_window_key_event(void* doc, uint32_t window_id, int type, int char_code, int key_code);
+int loke_post_window_mouse_event(void* doc, uint32_t window_id, int type, int64_t x, int64_t y, int count, int buttons, int mods);
+int loke_post_window_gesture_event(void* doc, uint32_t window_id, const char* typ, int64_t x, int64_t y, int64_t offset);
+int loke_post_window_ext_text_input_event(void* doc, uint32_t window_id, int typ, const char* text);
+int loke_resize_window(void* doc, uint32_t window_id, int w, int h);
 
-// Window paint
-int loke_paint_window(void* doc, uint64_t window_id, void* buf, int px_w, int px_h);
-int loke_paint_window_dpi(void* doc, uint64_t window_id, void* buf, int px_w, int px_h, double dpi_scale);
-int loke_paint_window_for_view(void* doc, uint64_t window_id, void* view, void* buf, int px_w, int px_h, double dpi_scale);
-int loke_reset_window(void* doc, uint64_t window_id);
+// Window paint — x, y are top-left of source rect in twips
+int loke_paint_window(void* doc, uint32_t window_id, void* buf, int x, int y, int px_w, int px_h);
+int loke_paint_window_dpi(void* doc, uint32_t window_id, void* buf, int x, int y, int px_w, int px_h, double dpi_scale);
+int loke_paint_window_for_view(void* doc, uint32_t window_id, int view_id, void* buf, int x, int y, int px_w, int px_h, double dpi_scale);
 
-// Font subset
-// Returns 1 on success; *out must be freed by caller with free().
+// Font subset — NOT in LOK 24.8, stubbed for future
 int loke_get_font_subset(void* doc, const char* font_name, char** out, size_t* out_len);
+
+// Reset window — NOT in LOK 24.8, stubbed for future
+int loke_reset_window(void* doc, uint32_t window_id);
 
 #ifdef __cplusplus
 }
@@ -241,78 +251,70 @@ int loke_get_font_subset(void* doc, const char* font_name, char** out, size_t* o
 #include <stdlib.h>
 #include <string.h>
 
-int loke_post_window_key_event(void* doc, uint64_t window_id, int type, int char_code, int key_code) {
+int loke_post_window_key_event(void* doc, uint32_t window_id, int type, int char_code, int key_code) {
     if (!doc) return 0;
     LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
     if (!d->pClass || !d->pClass->postWindowKeyEvent) return 0;
-    return d->pClass->postWindowKeyEvent(d, window_id, type, char_code, key_code);
+    return d->pClass->postWindowKeyEvent(d, window_id, type, char_code, key_code), 1;
 }
 
-int loke_post_window_mouse_event(void* doc, uint64_t window_id, int type, int64_t x, int64_t y, int count, int buttons, int mods) {
+int loke_post_window_mouse_event(void* doc, uint32_t window_id, int type, int64_t x, int64_t y, int count, int buttons, int mods) {
     if (!doc) return 0;
     LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
     if (!d->pClass || !d->pClass->postWindowMouseEvent) return 0;
-    return d->pClass->postWindowMouseEvent(d, window_id, type, x, y, count, buttons, mods);
+    return d->pClass->postWindowMouseEvent(d, window_id, type, x, y, count, buttons, mods), 1;
 }
 
-int loke_post_window_gesture_event(void* doc, uint64_t window_id, const char* typ, int64_t x, int64_t y, int64_t offset) {
+int loke_post_window_gesture_event(void* doc, uint32_t window_id, const char* typ, int64_t x, int64_t y, int64_t offset) {
     if (!doc || !typ) return 0;
     LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
     if (!d->pClass || !d->pClass->postWindowGestureEvent) return 0;
-    return d->pClass->postWindowGestureEvent(d, window_id, typ, x, y, offset);
+    return d->pClass->postWindowGestureEvent(d, window_id, typ, x, y, offset), 1;
 }
 
-int loke_post_window_ext_text_input_event(void* doc, uint64_t window_id, int typ, const char* text) {
+int loke_post_window_ext_text_input_event(void* doc, uint32_t window_id, int typ, const char* text) {
     if (!doc || !text) return 0;
     LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
     if (!d->pClass || !d->pClass->postWindowExtTextInputEvent) return 0;
-    return d->pClass->postWindowExtTextInputEvent(d, window_id, typ, text);
+    return d->pClass->postWindowExtTextInputEvent(d, window_id, typ, text), 1;
 }
 
-int loke_resize_window(void* doc, uint64_t window_id, int w, int h) {
+int loke_resize_window(void* doc, uint32_t window_id, int w, int h) {
     if (!doc) return 0;
     LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
     if (!d->pClass || !d->pClass->resizeWindow) return 0;
-    return d->pClass->resizeWindow(d, window_id, w, h);
+    return d->pClass->resizeWindow(d, window_id, w, h), 1;
 }
 
-int loke_paint_window(void* doc, uint64_t window_id, void* buf, int px_w, int px_h) {
+int loke_paint_window(void* doc, uint32_t window_id, void* buf, int x, int y, int px_w, int px_h) {
     if (!doc || !buf) return 0;
     LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
     if (!d->pClass || !d->pClass->paintWindow) return 0;
-    return d->pClass->paintWindow(d, window_id, buf, px_w, px_h);
+    return d->pClass->paintWindow(d, window_id, (unsigned char*)buf, x, y, px_w, px_h), 1;
 }
 
-int loke_paint_window_dpi(void* doc, uint64_t window_id, void* buf, int px_w, int px_h, double dpi_scale) {
+int loke_paint_window_dpi(void* doc, uint32_t window_id, void* buf, int x, int y, int px_w, int px_h, double dpi_scale) {
     if (!doc || !buf) return 0;
     LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
     if (!d->pClass || !d->pClass->paintWindowDPI) return 0;
-    return d->pClass->paintWindowDPI(d, window_id, buf, px_w, px_h, dpi_scale);
+    return d->pClass->paintWindowDPI(d, window_id, (unsigned char*)buf, x, y, px_w, px_h, dpi_scale), 1;
 }
 
-int loke_paint_window_for_view(void* doc, uint64_t window_id, void* view, void* buf, int px_w, int px_h, double dpi_scale) {
+int loke_paint_window_for_view(void* doc, uint32_t window_id, int view_id, void* buf, int x, int y, int px_w, int px_h, double dpi_scale) {
     if (!doc || !buf) return 0;
     LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
     if (!d->pClass || !d->pClass->paintWindowForView) return 0;
-    return d->pClass->paintWindowForView(d, window_id, view, buf, px_w, px_h, dpi_scale);
-}
-
-int loke_reset_window(void* doc, uint64_t window_id) {
-    if (!doc) return 0;
-    LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
-    if (!d->pClass || !d->pClass->resetWindow) return 0;
-    return d->pClass->resetWindow(d, window_id);
+    return d->pClass->paintWindowForView(d, window_id, (unsigned char*)buf, x, y, px_w, px_h, dpi_scale, view_id), 1;
 }
 
 int loke_get_font_subset(void* doc, const char* font_name, char** out, size_t* out_len) {
-    if (!doc || !font_name || !out || !out_len) return 0;
-    LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
-    if (!d->pClass || !d->pClass->getFontSubset) return 0;
-    char* s = d->pClass->getFontSubset(d, font_name);
-    if (!s) return 0;
-    *out_len = strlen(s);
-    *out = s;
-    return 1;
+    (void)doc; (void)font_name; (void)out; (void)out_len;
+    return 0;  // NOT IMPLEMENTED in LOK 24.8
+}
+
+int loke_reset_window(void* doc, uint32_t window_id) {
+    (void)doc; (void)window_id;
+    return 0;  // NOT IMPLEMENTED in LOK 24.8
 }
 ```
 
@@ -327,35 +329,9 @@ Expected: compiles cleanly.
 
 **Files:**
 - `lok/real_backend.go`
-- `internal/lokc/callback.go` (add DispatchHandle helpers)
+- `internal/lokc/callback.go` (add DispatchHandle helpers — already present from Phase 9)
 
-- [ ] **Step 1: Add DispatchHandle helpers to `internal/lokc/callback.go`**
-
-Append:
-
-```go
-// DispatchHandleFromUintptr converts a uintptr to dispatchHandle.
-func DispatchHandleFromUintptr(v uintptr) dispatchHandle {
-    return dispatchHandle(v)
-}
-
-// UintptrFromDispatchHandle converts dispatchHandle to uintptr.
-func UintptrFromDispatchHandle(h dispatchHandle) uintptr {
-    return uintptr(h)
-}
-
-// RegisterDispatcherUintptr is a convenience wrapper returning uintptr.
-func RegisterDispatcherUintptr(d Dispatcher) uintptr {
-    return uintptr(RegisterDispatcher(d))
-}
-
-// UnregisterDispatcherUintptr is the symmetric inverse.
-func UnregisterDispatcherUintptr(h uintptr) {
-    UnregisterDispatcher(dispatchHandle(h))
-}
-```
-
-- [ ] **Step 2: Add forwarders in `lok/real_backend.go`**
+- [ ] **Step 1: Add forwarders in `lok/real_backend.go`**
 
 Before the `var _ backend = realBackend{}` line, add:
 
@@ -367,203 +343,192 @@ func (realBackend) GetCommandValues(d documentHandle, command string) (string, e
     var outLen C.size_t
     ok := C.loke_get_command_values(mustDoc(d).d, C.CString(command), &out, &outLen)
     if ok == 0 {
-        return "", mapLokErr(getDocError(mustDoc(d).d))
+        // getCommandValues returns NULL for unknown commands or errors.
+        // LOK has no document-level getError, so we return a generic error.
+        return "", ErrUnsupported
     }
     defer C.free(unsafe.Pointer(out))
-    // Return as string; lok layer will convert to json.RawMessage.
     return C.GoStringN(out, C.int(outLen)), nil
 }
 
-func (realBackend) CompleteFunction(d documentHandle, part int, name string) error {
-    ok := C.loke_complete_function(mustDoc(d).d, C.int(part), C.CString(name))
-    if ok == 0 {
-        return mapLokErr(getDocError(mustDoc(d).d))
-    }
+func (realBackend) CompleteFunction(d documentHandle, name string) error {
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	ok := C.loke_complete_function(mustDoc(d).d, cName)
+	if ok == 0 {
+		return ErrUnsupported
+	}
+	return nil
+}
     return nil
 }
 
 func (realBackend) SendDialogEvent(d documentHandle, windowID uint64, argsJSON string) error {
-    // Note: LOK's sendDialogEvent takes windowID and argsJSON.
-    // We need to check if the function exists in the vtable.
-    // For now, use a generic approach via document's pClass.
-    // The C shim will handle NULL slot.
-    ok := C.loke_send_dialog_event(mustDoc(d).d, C.uint64_t(windowID), C.CString(argsJSON))
+    cjson := C.CString(argsJSON)
+    defer C.free(unsafe.Pointer(cjson))
+    // sendDialogEvent on Document takes uint64 window ID.
+    // We need a C shim that calls the Document vtable slot.
+    ok := C.loke_doc_send_dialog_event(mustDoc(d).d, C.uint64_t(windowID), cjson)
     if ok == 0 {
-        return mapLokErr(getDocError(mustDoc(d).d))
+        return ErrUnsupported
     }
     return nil
 }
 
 func (realBackend) SendContentControlEvent(d documentHandle, argsJSON string) error {
-    ok := C.loke_send_content_control_event(mustDoc(d).d, C.CString(argsJSON))
+    cjson := C.CString(argsJSON)
+    defer C.free(unsafe.Pointer(cjson))
+    ok := C.loke_doc_send_content_control_event(mustDoc(d).d, cjson)
     if ok == 0 {
-        return mapLokErr(getDocError(mustDoc(d).d))
+        return ErrUnsupported
     }
     return nil
 }
 
 func (realBackend) SendFormFieldEvent(d documentHandle, argsJSON string) error {
-    ok := C.loke_send_form_field_event(mustDoc(d).d, C.CString(argsJSON))
+    cjson := C.CString(argsJSON)
+    defer C.free(unsafe.Pointer(cjson))
+    ok := C.loke_doc_send_form_field_event(mustDoc(d).d, cjson)
     if ok == 0 {
-        return mapLokErr(getDocError(mustDoc(d).d))
+        return ErrUnsupported
     }
     return nil
 }
 
-func (realBackend) PostWindowKeyEvent(d documentHandle, windowID uint64, typ, charCode, keyCode int) error {
-    ok := C.loke_post_window_key_event(mustDoc(d).d, C.uint64_t(windowID), C.int(typ), C.int(charCode), C.int(keyCode))
+func (realBackend) PostWindowKeyEvent(d documentHandle, windowID uint32, typ, charCode, keyCode int) error {
+    ok := C.loke_post_window_key_event(mustDoc(d).d, C.uint32_t(windowID), C.int(typ), C.int(charCode), C.int(keyCode))
     if ok == 0 {
-        return mapLokErr(getDocError(mustDoc(d).d))
+        return ErrUnsupported
     }
     return nil
 }
 
-func (realBackend) PostWindowMouseEvent(d documentHandle, windowID uint64, typ int, x, y int64, count int, buttons, mods int) error {
-    ok := C.loke_post_window_mouse_event(mustDoc(d).d, C.uint64_t(windowID), C.int(typ), C.int64_t(x), C.int64_t(y), C.int(count), C.int(buttons), C.int(mods))
+func (realBackend) PostWindowMouseEvent(d documentHandle, windowID uint32, typ int, x, y int64, count int, buttons, mods int) error {
+    ok := C.loke_post_window_mouse_event(mustDoc(d).d, C.uint32_t(windowID), C.int(typ), C.int64_t(x), C.int64_t(y), C.int(count), C.int(buttons), C.int(mods))
     if ok == 0 {
-        return mapLokErr(getDocError(mustDoc(d).d))
+        return ErrUnsupported
     }
     return nil
 }
 
-func (realBackend) PostWindowGestureEvent(d documentHandle, windowID uint64, typ string, x, y, offset int64) error {
-    ok := C.loke_post_window_gesture_event(mustDoc(d).d, C.uint64_t(windowID), C.CString(typ), C.int64_t(x), C.int64_t(y), C.int64_t(offset))
+func (realBackend) PostWindowGestureEvent(d documentHandle, windowID uint32, typ string, x, y, offset int64) error {
+    ctyp := C.CString(typ)
+    defer C.free(unsafe.Pointer(ctyp))
+    ok := C.loke_post_window_gesture_event(mustDoc(d).d, C.uint32_t(windowID), ctyp, C.int64_t(x), C.int64_t(y), C.int64_t(offset))
     if ok == 0 {
-        return mapLokErr(getDocError(mustDoc(d).d))
+        return ErrUnsupported
     }
     return nil
 }
 
-func (realBackend) PostWindowExtTextInputEvent(d documentHandle, windowID uint64, typ int, text string) error {
-    ok := C.loke_post_window_ext_text_input_event(mustDoc(d).d, C.uint64_t(windowID), C.int(typ), C.CString(text))
+func (realBackend) PostWindowExtTextInputEvent(d documentHandle, windowID uint32, typ int, text string) error {
+    ctext := C.CString(text)
+    defer C.free(unsafe.Pointer(ctext))
+    ok := C.loke_post_window_ext_text_input_event(mustDoc(d).d, C.uint32_t(windowID), C.int(typ), ctext)
     if ok == 0 {
-        return mapLokErr(getDocError(mustDoc(d).d))
+        return ErrUnsupported
     }
     return nil
 }
 
-func (realBackend) ResizeWindow(d documentHandle, windowID uint64, w, h int) error {
-    ok := C.loke_resize_window(mustDoc(d).d, C.uint64_t(windowID), C.int(w), C.int(h))
+func (realBackend) ResizeWindow(d documentHandle, windowID uint32, w, h int) error {
+    ok := C.loke_resize_window(mustDoc(d).d, C.uint32_t(windowID), C.int(w), C.int(h))
     if ok == 0 {
-        return mapLokErr(getDocError(mustDoc(d).d))
+        return ErrUnsupported
     }
     return nil
 }
 
-func (realBackend) PaintWindow(d documentHandle, windowID uint64, buf []byte, pxW, pxH int) error {
-    if len(buf) != 4*pxW*pxH {
-        return ErrInvalidOption
+func (realBackend) PaintWindow(d documentHandle, windowID uint32, buf []byte, x, y, pxW, pxH int) error {
+    if err := checkPaintBuf("PaintWindow", buf, pxW, pxH); err != nil {
+        return err
     }
-    ok := C.loke_paint_window(mustDoc(d).d, C.uint64_t(windowID), unsafe.Pointer(&buf[0]), C.int(pxW), C.int(pxH))
+    ok := C.loke_paint_window(mustDoc(d).d, C.uint32_t(windowID), unsafe.Pointer(&buf[0]), C.int(x), C.int(y), C.int(pxW), C.int(pxH))
     if ok == 0 {
-        return mapLokErr(getDocError(mustDoc(d).d))
+        return ErrUnsupported
     }
     return nil
 }
 
-func (realBackend) PaintWindowDPI(d documentHandle, windowID uint64, buf []byte, pxW, pxH int, dpiScale float64) error {
-    if len(buf) != 4*pxW*pxH {
-        return ErrInvalidOption
+func (realBackend) PaintWindowDPI(d documentHandle, windowID uint32, buf []byte, x, y, pxW, pxH int, dpiScale float64) error {
+    if err := checkPaintBuf("PaintWindowDPI", buf, pxW, pxH); err != nil {
+        return err
     }
-    ok := C.loke_paint_window_dpi(mustDoc(d).d, C.uint64_t(windowID), unsafe.Pointer(&buf[0]), C.int(pxW), C.int(pxH), C.double(dpiScale))
+    ok := C.loke_paint_window_dpi(mustDoc(d).d, C.uint32_t(windowID), unsafe.Pointer(&buf[0]), C.int(x), C.int(y), C.int(pxW), C.int(pxH), C.double(dpiScale))
     if ok == 0 {
-        return mapLokErr(getDocError(mustDoc(d).d))
+        return ErrUnsupported
     }
     return nil
 }
 
-func (realBackend) PaintWindowForView(d documentHandle, windowID uint64, view viewHandle, buf []byte, pxW, pxH int, dpiScale float64) error {
-    if len(buf) != 4*pxW*pxH {
-        return ErrInvalidOption
+func (realBackend) PaintWindowForView(d documentHandle, windowID uint32, view viewHandle, buf []byte, x, y, pxW, pxH int, dpiScale float64) error {
+    if err := checkPaintBuf("PaintWindowForView", buf, pxW, pxH); err != nil {
+        return err
     }
-    ok := C.loke_paint_window_for_view(mustDoc(d).d, C.uint64_t(windowID), mustView(view).v, unsafe.Pointer(&buf[0]), C.int(pxW), C.int(pxH), C.double(dpiScale))
+    // viewHandle is internal; convert to int (ViewID) for LOK.
+    ok := C.loke_paint_window_for_view(mustDoc(d).d, C.uint32_t(windowID), C.int(view), unsafe.Pointer(&buf[0]), C.int(x), C.int(y), C.int(pxW), C.int(pxH), C.double(dpiScale))
     if ok == 0 {
-        return mapLokErr(getDocError(mustDoc(d).d))
+        return ErrUnsupported
     }
     return nil
-}
-
-func (realBackend) ResetWindow(d documentHandle, windowID uint64) error {
-    ok := C.loke_reset_window(mustDoc(d).d, C.uint64_t(windowID))
-    if ok == 0 {
-        return mapLokErr(getDocError(mustDoc(d).d))
-    }
-    return nil
-}
-
-func (realBackend) GetFontSubset(d documentHandle, fontName string) ([]byte, error) {
-    var out *C.char
-    var outLen C.size_t
-    ok := C.loke_get_font_subset(mustDoc(d).d, C.CString(fontName), &out, &outLen)
-    if ok == 0 {
-        return nil, mapLokErr(getDocError(mustDoc(d).d))
-    }
-    defer C.free(unsafe.Pointer(out))
-    return C.GoBytes(unsafe.Pointer(out), C.int(outLen)), nil
 }
 ```
 
-Also add the missing C shims to `commands.h`/`windows.h` for dialog/content-control/form-field events:
+Also add to `commands.h` the Document-level sendDialogEvent, sendContentControlEvent, sendFormFieldEvent:
 
-In `commands.h` add:
 ```c
-int loke_send_dialog_event(void* doc, uint64_t window_id, const char* args_json);
-int loke_send_content_control_event(void* doc, const char* args_json);
-int loke_send_form_field_event(void* doc, const char* args_json);
+// In commands.h, add:
+int loke_doc_send_dialog_event(void* doc, uint64_t window_id, const char* args_json);
+int loke_doc_send_content_control_event(void* doc, const char* args_json);
+int loke_doc_send_form_field_event(void* doc, const char* args_json);
 ```
 
-In `commands.c` add:
+And in `commands.c`:
+
 ```c
-int loke_send_dialog_event(void* doc, uint64_t window_id, const char* args_json) {
+int loke_doc_send_dialog_event(void* doc, uint64_t window_id, const char* args_json) {
     if (!doc || !args_json) return 0;
     LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
     if (!d->pClass || !d->pClass->sendDialogEvent) return 0;
-    return d->pClass->sendDialogEvent(d, window_id, args_json);
+    d->pClass->sendDialogEvent(d, window_id, args_json);
+    return 1;
 }
-int loke_send_content_control_event(void* doc, const char* args_json) {
+int loke_doc_send_content_control_event(void* doc, const char* args_json) {
     if (!doc || !args_json) return 0;
     LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
     if (!d->pClass || !d->pClass->sendContentControlEvent) return 0;
-    return d->pClass->sendContentControlEvent(d, args_json);
+    d->pClass->sendContentControlEvent(d, args_json);
+    return 1;
 }
-int loke_send_form_field_event(void* doc, const char* args_json) {
+int loke_doc_send_form_field_event(void* doc, const char* args_json) {
     if (!doc || !args_json) return 0;
     LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
     if (!d->pClass || !d->pClass->sendFormFieldEvent) return 0;
-    return d->pClass->sendFormFieldEvent(d, args_json);
+    d->pClass->sendFormFieldEvent(d, args_json);
+    return 1;
 }
 ```
 
-- [ ] **Step 3: Add `getDocError` helper to `real_backend.go`**
+- [ ] **Step 2: Add `checkPaintBuf` import**
 
-```go
-func getDocError(d *C.LibreOfficeKitDocument) error {
-    if d == nil || d.pClass == nil || d.pClass->getError == nil {
-        return nil
-    }
-    cerr := d.pClass.getError(d)
-    if cerr == nil {
-        return nil
-    }
-    defer C.free(unsafe.Pointer(cerr))
-    return &LOKError{Op: "getError", Detail: C.GoString(cerr)}
-}
-```
+`real_backend.go` needs access to `checkPaintBuf`. Since it's in the same package (`lok`), it can call it directly. No change needed.
 
-- [ ] **Step 4: Build**
+- [ ] **Step 3: Build**
 
 Run: `go build ./...`
 Expected: compiles cleanly.
 
 ---
 
-## Task 5: Public API — `lok/commands.go`
+## Task 5: Public API — append to `lok/commands.go`
 
 **Files:**
-- `lok/commands.go`
-- `lok/commands_test.go`
+- `lok/commands.go` (append)
+- `lok/commands_test.go` (append)
 
-- [ ] **Step 1: Implement `GetCommandValues`**
+- [ ] **Step 1: Append `GetCommandValues` and `CompleteFunction`**
+
+Add to end of `lok/commands.go`:
 
 ```go
 // GetCommandValues returns a JSON document describing the current
@@ -582,45 +547,39 @@ Expected: compiles cleanly.
 // Returns ErrUnsupported if LOK does not implement getCommandValues for this
 // build. Returns a non-nil error for invalid commands or closed documents.
 func (d *Document) GetCommandValues(command string) (json.RawMessage, error) {
-    d.office.mu.Lock()
-    defer d.office.mu.Unlock()
-    if d.closed {
-        return nil, ErrClosed
+    unlock, err := d.guard()
+    if err != nil {
+        return nil, err
     }
+    defer unlock()
     s, err := d.office.be.GetCommandValues(d.h, command)
     if err != nil {
         return nil, err
     }
     return json.RawMessage(s), nil
 }
-```
 
-- [ ] **Step 2: Implement `CompleteFunction`**
-
-```go
 // CompleteFunction attempts to complete a function (formula) in a spreadsheet.
 // part is the part index (sheet), name is the function name. Returns an error
 // if the document is not a spreadsheet or the function cannot be completed.
+// This is a no-op for non-Calc documents.
 func (d *Document) CompleteFunction(part int, name string) error {
-    d.office.mu.Lock()
-    defer d.office.mu.Unlock()
-    if d.closed {
-        return ErrClosed
+    unlock, err := d.guard()
+    if err != nil {
+        return err
     }
+    defer unlock()
     return d.office.be.CompleteFunction(d.h, part, name)
 }
-```
 
-- [ ] **Step 3: Typed helpers**
-
-```go
 // IsCommandEnabled returns whether command is currently enabled.
+// Returns an error if the command JSON cannot be parsed. If the "enabled"
+// or "state" field is absent, returns false with no error.
 func (d *Document) IsCommandEnabled(cmd string) (bool, error) {
     raw, err := d.GetCommandValues(cmd)
     if err != nil {
         return false, err
     }
-    // LOK returns JSON like {"enabled": true} or {"state": true}
     var m map[string]interface{}
     if err := json.Unmarshal(raw, &m); err != nil {
         return false, err
@@ -635,13 +594,13 @@ func (d *Document) IsCommandEnabled(cmd string) (bool, error) {
 }
 
 // GetFontNames returns the list of available font names.
+// Returns an error if the command JSON cannot be parsed. If the "value"
+// field is absent or not a list, returns an empty slice.
 func (d *Document) GetFontNames() ([]string, error) {
     raw, err := d.GetCommandValues(".uno:FontName")
     if err != nil {
         return nil, err
     }
-    // Expected: { "type": "list", "command": ".uno:FontName",
-    //             "value": [ "Arial", "Times New Roman", ... ] }
     var m map[string]interface{}
     if err := json.Unmarshal(raw, &m); err != nil {
         return nil, err
@@ -657,20 +616,13 @@ func (d *Document) GetFontNames() ([]string, error) {
 }
 ```
 
-- [ ] **Step 4: Write unit tests**
+Don't forget to add imports: `"encoding/json"`, `"fmt"`.
 
-Create `lok/commands_test.go`:
+- [ ] **Step 2: Append tests to `lok/commands_test.go`**
+
+Add to end of file:
 
 ```go
-//go:build linux || darwin
-
-package lok
-
-import (
-    "encoding/json"
-    "testing"
-)
-
 func TestGetCommandValues(t *testing.T) {
     fb := &fakeBackend{}
     withFakeBackend(t, fb)
@@ -741,7 +693,7 @@ func TestGetFontNames(t *testing.T) {
 }
 ```
 
-- [ ] **Step 5: Run tests**
+- [ ] **Step 3: Run tests**
 
 Run: `go test ./lok -run 'TestGetCommand|TestIsCommand|TestGetFont' -v`
 Expected: PASS.
@@ -756,54 +708,70 @@ Expected: PASS.
 
 - [ ] **Step 1: Implement window event methods**
 
+Create `lok/windows.go`:
+
 ```go
+//go:build linux || darwin
+
+package lok
+
+import (
+    "errors"
+)
+
 // PostWindowKeyEvent posts a key event to a specific window.
-func (d *Document) PostWindowKeyEvent(windowID uint64, typ KeyEventType, charCode, keyCode int) error {
-    d.office.mu.Lock()
-    defer d.office.mu.Unlock()
-    if d.closed {
-        return ErrClosed
+func (d *Document) PostWindowKeyEvent(windowID uint32, typ KeyEventType, charCode, keyCode int) error {
+    unlock, err := d.guard()
+    if err != nil {
+        return err
+    }
+    defer unlock()
+    if err := requireInt32Key("PostWindowKeyEvent", charCode, keyCode); err != nil {
+        return err
     }
     return d.office.be.PostWindowKeyEvent(d.h, windowID, int(typ), charCode, keyCode)
 }
 
 // PostWindowMouseEvent posts a mouse event to a specific window.
-func (d *Document) PostWindowMouseEvent(windowID uint64, typ MouseEventType, x, y int64, count int, buttons MouseButtons, mods Modifiers) error {
-    d.office.mu.Lock()
-    defer d.office.mu.Unlock()
-    if d.closed {
-        return ErrClosed
+func (d *Document) PostWindowMouseEvent(windowID uint32, typ MouseEventType, x, y int64, count int, buttons MouseButton, mods Modifier) error {
+    unlock, err := d.guard()
+    if err != nil {
+        return err
+    }
+    defer unlock()
+    if err := requireInt32XY("PostWindowMouseEvent", x, y); err != nil {
+        return err
     }
     return d.office.be.PostWindowMouseEvent(d.h, windowID, int(typ), x, y, count, int(buttons), int(mods))
 }
 
 // PostWindowGestureEvent posts a gesture event (pan/zoom) to a window.
-func (d *Document) PostWindowGestureEvent(windowID uint64, typ string, x, y, offset int64) error {
-    d.office.mu.Lock()
-    defer d.office.mu.Unlock()
-    if d.closed {
-        return ErrClosed
+func (d *Document) PostWindowGestureEvent(windowID uint32, typ string, x, y, offset int64) error {
+    unlock, err := d.guard()
+    if err != nil {
+        return err
     }
+    defer unlock()
     return d.office.be.PostWindowGestureEvent(d.h, windowID, typ, x, y, offset)
 }
 
 // PostWindowExtTextInputEvent posts extended text input to a window.
-func (d *Document) PostWindowExtTextInputEvent(windowID uint64, typ int, text string) error {
-    d.office.mu.Lock()
-    defer d.office.mu.Unlock()
-    if d.closed {
-        return ErrClosed
+func (d *Document) PostWindowExtTextInputEvent(windowID uint32, typ int, text string) error {
+    unlock, err := d.guard()
+    if err != nil {
+        return err
     }
+    defer unlock()
     return d.office.be.PostWindowExtTextInputEvent(d.h, windowID, typ, text)
 }
 
 // ResizeWindow changes the size of a window.
-func (d *Document) ResizeWindow(windowID uint64, w, h int) error {
-    d.office.mu.Lock()
-    defer d.office.mu.Unlock()
-    if d.closed {
-        return ErrClosed
+func (d *Document) ResizeWindow(windowID uint32, w, h int) error {
+    unlock, err := d.guard()
+    if err != nil {
+        return err
     }
+    defer unlock()
     if w <= 0 || h <= 0 {
         return ErrInvalidOption
     }
@@ -813,60 +781,57 @@ func (d *Document) ResizeWindow(windowID uint64, w, h int) error {
 
 - [ ] **Step 2: Implement window paint methods**
 
+Append to `lok/windows.go`:
+
 ```go
+import "github.com/julianshen/golibreofficekit/internal/lokc"
+
 // PaintWindow paints a window into the provided buffer. The buffer must
 // have length 4*pxW*pxH. Returns premultiplied BGRA (same format as PaintTileRaw).
-func (d *Document) PaintWindow(windowID uint64, buf []byte, pxW, pxH int) error {
-    d.office.mu.Lock()
-    defer d.office.mu.Unlock()
-    if d.closed {
-        return ErrClosed
+// x, y specify the top-left corner of the source rectangle in twips.
+func (d *Document) PaintWindow(windowID uint32, buf []byte, x, y, pxW, pxH int) error {
+    unlock, err := d.guard()
+    if err != nil {
+        return err
     }
-    return d.office.be.PaintWindow(d.h, windowID, buf, pxW, pxH)
+    defer unlock()
+    return d.office.be.PaintWindow(d.h, windowID, buf, x, y, pxW, pxH)
 }
 
 // PaintWindowDPI paints a window with a DPI scale factor.
-func (d *Document) PaintWindowDPI(windowID uint64, buf []byte, pxW, pxH int, dpiScale float64) error {
-    d.office.mu.Lock()
-    defer d.office.mu.Unlock()
-    if d.closed {
-        return ErrClosed
+func (d *Document) PaintWindowDPI(windowID uint32, buf []byte, x, y, pxW, pxH int, dpiScale float64) error {
+    unlock, err := d.guard()
+    if err != nil {
+        return err
     }
-    return d.office.be.PaintWindowDPI(d.h, windowID, buf, pxW, pxH, dpiScale)
+    defer unlock()
+    return d.office.be.PaintWindowDPI(d.h, windowID, buf, x, y, pxW, pxH, dpiScale)
 }
 
 // PaintWindowForView paints a window for a specific view ID.
-func (d *Document) PaintWindowForView(windowID uint64, view ViewID, buf []byte, pxW, pxH int, dpiScale float64) error {
-    d.office.mu.Lock()
-    defer d.office.mu.Unlock()
-    if d.closed {
-        return ErrClosed
+func (d *Document) PaintWindowForView(windowID uint32, view ViewID, buf []byte, x, y, pxW, pxH int, dpiScale float64) error {
+    unlock, err := d.guard()
+    if err != nil {
+        return err
     }
+    defer unlock()
     vh, ok := d.viewHandles[view]
     if !ok {
         return ErrInvalidOption
     }
-    return d.office.be.PaintWindowForView(d.h, windowID, vh, buf, pxW, pxH, dpiScale)
+    return d.office.be.PaintWindowForView(d.h, windowID, vh, buf, x, y, pxW, pxH, dpiScale)
 }
 
 // ResetWindow resets a window's internal state.
-func (d *Document) ResetWindow(windowID uint64) error {
-    d.office.mu.Lock()
-    defer d.office.mu.Unlock()
-    if d.closed {
-        return ErrClosed
-    }
-    return d.office.be.ResetWindow(d.h, windowID)
+// NOTE: Not available in LOK 24.8. Always returns ErrUnsupported.
+func (d *Document) ResetWindow(windowID uint32) error {
+    return ErrUnsupported
 }
 
 // GetFontSubset retrieves a subset of a font as a byte slice (SFNT).
+// NOTE: Not available in LOK 24.8. Always returns ErrUnsupported.
 func (d *Document) GetFontSubset(fontName string) ([]byte, error) {
-    d.office.mu.Lock()
-    defer d.office.mu.Unlock()
-    if d.closed {
-        return nil, ErrClosed
-    }
-    return d.office.be.GetFontSubset(d.h, fontName)
+    return nil, ErrUnsupported
 }
 ```
 
@@ -880,6 +845,7 @@ Create `lok/windows_test.go`:
 package lok
 
 import (
+    "errors"
     "testing"
 )
 
@@ -891,7 +857,7 @@ func TestPostWindowKeyEvent(t *testing.T) {
     doc, _ := o.Load("/tmp/x.odt")
     defer doc.Close()
 
-    err := doc.PostWindowKeyEvent(123, KEY_PRESS, 'A', 65)
+    err := doc.PostWindowKeyEvent(123, KeyEventInput, 'A', 65)
     if err != nil {
         t.Fatal(err)
     }
@@ -900,24 +866,7 @@ func TestPostWindowKeyEvent(t *testing.T) {
     }
 }
 
-func TestPaintWindow_InvalidBuffer(t *testing.T) {
-    withFakeBackend(t, &fakeBackend{})
-    o, _ := New("/install")
-    defer o.Close()
-    doc, _ := o.Load("/tmp/x.odt")
-    defer doc.Close()
-
-    buf := make([]byte, 100) // wrong size
-    err := doc.PaintWindow(1, buf, 5, 5) // needs 4*5*5=100... actually ok
-    // Actually 4*5*5 = 100, so this is valid. Let's use wrong size.
-    buf2 := make([]byte, 99)
-    err = doc.PaintWindow(1, buf2, 5, 5)
-    if !errors.Is(err, ErrInvalidOption) {
-        t.Errorf("want ErrInvalidOption for wrong buffer size, got %v", err)
-    }
-}
-
-func TestGetFontSubset(t *testing.T) {
+func TestPostWindowMouseEvent(t *testing.T) {
     fb := &fakeBackend{}
     withFakeBackend(t, fb)
     o, _ := New("/install")
@@ -925,23 +874,69 @@ func TestGetFontSubset(t *testing.T) {
     doc, _ := o.Load("/tmp/x.odt")
     defer doc.Close()
 
-    fb.lastWindowFontData = []byte("SFNT...")
-    data, err := doc.GetFontSubset("Arial")
+    err := doc.PostWindowMouseEvent(456, MouseButtonDown, 100, 200, 1, MouseLeft, ModShift)
     if err != nil {
         t.Fatal(err)
     }
-    if string(data) != "SFNT..." {
-        t.Errorf("got %s", data)
+}
+
+func TestResizeWindow_InvalidSize(t *testing.T) {
+    withFakeBackend(t, &fakeBackend{})
+    o, _ := New("/install")
+    defer o.Close()
+    doc, _ := o.Load("/tmp/x.odt")
+    defer doc.Close()
+
+    err := doc.ResizeWindow(1, -10, 100)
+    if !errors.Is(err, ErrInvalidOption) {
+        t.Errorf("want ErrInvalidOption, got %v", err)
     }
-    if fb.lastWindowFontName != "Arial" {
-        t.Errorf("fontName=%s", fb.lastWindowFontName)
+}
+
+func TestPaintWindow_Closed(t *testing.T) {
+    withFakeBackend(t, &fakeBackend{})
+    o, _ := New("/install")
+    defer o.Close()
+    doc, _ := o.Load("/tmp/x.odt")
+    doc.Close()
+
+    buf := make([]byte, 4*100*100)
+    err := doc.PaintWindow(1, buf, 0, 0, 100, 100)
+    if !errors.Is(err, ErrClosed) {
+        t.Errorf("want ErrClosed, got %v", err)
+    }
+}
+
+func TestGetFontSubset_Unavailable(t *testing.T) {
+    withFakeBackend(t, &fakeBackend{})
+    o, _ := New("/install")
+    defer o.Close()
+    doc, _ := o.Load("/tmp/x.odt")
+    defer doc.Close()
+
+    _, err := doc.GetFontSubset("Arial")
+    if !errors.Is(err, ErrUnsupported) {
+        t.Errorf("want ErrUnsupported, got %v", err)
+    }
+}
+
+func TestResetWindow_Unavailable(t *testing.T) {
+    withFakeBackend(t, &fakeBackend{})
+    o, _ := New("/install")
+    defer o.Close()
+    doc, _ := o.Load("/tmp/x.odt")
+    defer doc.Close()
+
+    err := doc.ResetWindow(1)
+    if !errors.Is(err, ErrUnsupported) {
+        t.Errorf("want ErrUnsupported, got %v", err)
     }
 }
 ```
 
 - [ ] **Step 4: Run tests**
 
-Run: `go test ./lok -run 'TestPostWindow|TestPaintWindow|TestGetFontSubset' -v`
+Run: `go test ./lok -run 'TestPostWindow|TestResizeWindow|TestPaintWindow|TestGetFontSubset|TestResetWindow' -v`
 Expected: PASS.
 
 ---
@@ -954,35 +949,41 @@ Expected: PASS.
 
 - [ ] **Step 1: Implement form event methods**
 
+Create `lok/forms.go`:
+
 ```go
+//go:build linux || darwin
+
+package lok
+
 // SendDialogEvent sends a dialog event identified by windowID.
 // argsJSON is a JSON object whose structure depends on the event type.
 func (d *Document) SendDialogEvent(windowID uint64, argsJSON string) error {
-    d.office.mu.Lock()
-    defer d.office.mu.Unlock()
-    if d.closed {
-        return ErrClosed
+    unlock, err := d.guard()
+    if err != nil {
+        return err
     }
+    defer unlock()
     return d.office.be.SendDialogEvent(d.h, windowID, argsJSON)
 }
 
 // SendContentControlEvent sends an event for a content control.
 func (d *Document) SendContentControlEvent(argsJSON string) error {
-    d.office.mu.Lock()
-    defer d.office.mu.Unlock()
-    if d.closed {
-        return ErrClosed
+    unlock, err := d.guard()
+    if err != nil {
+        return err
     }
+    defer unlock()
     return d.office.be.SendContentControlEvent(d.h, argsJSON)
 }
 
 // SendFormFieldEvent sends an event for a form field.
 func (d *Document) SendFormFieldEvent(argsJSON string) error {
-    d.office.mu.Lock()
-    defer d.office.mu.Unlock()
-    if d.closed {
-        return ErrClosed
+    unlock, err := d.guard()
+    if err != nil {
+        return err
     }
+    defer unlock()
     return d.office.be.SendFormFieldEvent(d.h, argsJSON)
 }
 ```
@@ -1008,7 +1009,7 @@ func TestSendDialogEvent(t *testing.T) {
     doc, _ := o.Load("/tmp/x.odt")
     defer doc.Close()
 
-    args := `{"type":"dialog","action":"execute","data":{}}`
+    args := `{"type":"dialog","action":"execute"}`
     err := doc.SendDialogEvent(42, args)
     if err != nil {
         t.Fatal(err)
@@ -1041,7 +1042,7 @@ func TestSendFormFieldEvent(t *testing.T) {
     doc, _ := o.Load("/tmp/x.odt")
     defer doc.Close()
 
-    args := `{"field":"name","action":"changed","value":"John"}`
+    args := `{"field":"name","action":"changed"}`
     err := doc.SendFormFieldEvent(args)
     if err != nil {
         t.Fatal(err)
@@ -1063,53 +1064,36 @@ Expected: PASS.
 
 - [ ] **Step 1: Add command values integration test**
 
-Append to `lok/integration_test.go`:
+Append to `lok/integration_test.go` (reusing existing package-level Office):
 
 ```go
 // TestIntegration_CommandValues tests GetCommandValues with a real LOK instance.
-// Requires LOK_PATH to be set.
+// Requires LOK_PATH to be set and reuses the package-level Office.
 func TestIntegration_CommandValues(t *testing.T) {
     if testing.Short() {
         t.Skip("skipping integration test in short mode")
     }
-    lokPath := os.Getenv("LOK_PATH")
     if lokPath == "" {
         t.Skip("LOK_PATH not set")
     }
-
-    o, err := New(lokPath)
-    if err != nil {
-        t.Skipf("cannot create Office: %v (LO not installed?)", err)
-    }
-    defer o.Close()
-
-    // Use a simple test document.
+    // Use the package-level Office created in TestIntegration_FullLifecycle
+    // (see init or testMain). For simplicity, we create a doc here.
     docPath := "testdata/hello.odt"
-    doc, err := o.Load(docPath)
+    doc, err := testOffice.Load(docPath)
     if err != nil {
         t.Skipf("cannot load %s: %v", docPath, err)
     }
     defer doc.Close()
 
-    // Query a basic command.
     raw, err := doc.GetCommandValues(".uno:Save")
     if err != nil {
         t.Errorf("GetCommandValues(.uno:Save): %v", err)
     } else {
         t.Logf(".uno:Save command values: %s", raw)
-        // Should be valid JSON.
         var m map[string]interface{}
         if err := json.Unmarshal(raw, &m); err != nil {
             t.Errorf("GetCommandValues returned invalid JSON: %v", err)
         }
-    }
-
-    // Query font names.
-    raw, err = doc.GetCommandValues(".uno:FontName")
-    if err != nil {
-        t.Logf(".uno:FontName not available: %v", err) // may be unsupported
-    } else {
-        t.Logf(".uno:FontName: %s...", raw[:min(len(raw), 100)])
     }
 }
 ```
@@ -1124,45 +1108,33 @@ func TestIntegration_WindowPaint(t *testing.T) {
     if testing.Short() {
         t.Skip("skipping integration test in short mode")
     }
-    lokPath := os.Getenv("LOK_PATH")
     if lokPath == "" {
         t.Skip("LOK_PATH not set")
     }
 
-    o, err := New(lokPath)
-    if err != nil {
-        t.Skipf("cannot create Office: %v", err)
-    }
-    defer o.Close()
-
-    doc, err := o.Load("testdata/hello.odt")
+    doc, err := testOffice.Load("testdata/hello.odt")
     if err != nil {
         t.Skipf("cannot load document: %v", err)
     }
     defer doc.Close()
 
-    // Create a second view to have a window-like surface.
+    // Create a second view.
     viewID, err := doc.CreateView()
     if err != nil {
-        t.Skipf("cannot create view: %v", err) // may be unsupported
+        t.Skipf("cannot create view: %v", err)
     }
     defer doc.DestroyView(viewID)
 
-    // Try to paint into a window for that view.
-    // Note: actual window IDs may not be available without UI events.
-    // This test is best-effort: if PaintWindowForView is not supported,
-    // we skip.
+    // Try PaintWindowForView — may be unsupported, that's OK.
     buf := make([]byte, 4*200*200)
-    err = doc.PaintWindowForView(1, viewID, buf, 200, 200, 1.0)
+    err = doc.PaintWindowForView(1, viewID, buf, 0, 0, 200, 200, 1.0)
     if err != nil {
-        // Check if it's unsupported.
         var lokErr *LOKError
         if errors.As(err, &lokErr) {
             t.Skipf("PaintWindowForView not supported: %v", err)
         }
         t.Errorf("PaintWindowForView: %v", err)
     } else {
-        // Should have produced some non-trivial output.
         nonZero := 0
         for _, b := range buf {
             if b != 0 {
@@ -1176,9 +1148,17 @@ func TestIntegration_WindowPaint(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run integration tests (with LOK)**
+- [ ] **Step 3: Ensure package-level Office is available**
 
-Run: `LOK_PATH=/usr/lib/libreoffice/program go test -tags=lok_integration -run 'TestIntegration_Command|TestIntegration_Window' ./lok -v`
+The existing `integration_test.go` already has a `testOffice` pattern. Follow it.
+
+- [ ] **Step 4: Run integration tests**
+
+```bash
+GODEBUG=asyncpreemptoff=1 LOK_PATH=/usr/lib/libreoffice/program \
+  go test -tags=lok_integration -run 'TestIntegration_Command|TestIntegration_Window' ./lok -v
+```
+
 Expected: PASS or SKIP (if features not available).
 
 ---
@@ -1203,11 +1183,7 @@ Expected: `lok` package coverage ≥ 90%.
 go tool cover -html=coverage.out -o coverage.html
 ```
 
-Open `coverage.html` and verify that uncovered lines are either:
-- Trivial error paths that are hard to trigger in unit tests, or
-- cgo wrapper lines (excluded from gate).
-
-If coverage < 90%, add tests for the uncovered functions.
+Verify uncovered lines are trivial or cgo wrappers.
 
 - [ ] **Step 3: Run full test suite**
 
@@ -1243,7 +1219,7 @@ git commit -m "feat(lok): Phase 10 — command values & window events
 
 - Add Document.GetCommandValues and CompleteFunction
 - Add window event APIs: PostWindow*Event, ResizeWindow
-- Add window paint APIs: PaintWindow*, GetFontSubset
+- Add window paint APIs: PaintWindow*, GetFontSubset (stubbed)
 - Add dialog/content-control/form-field event helpers
 - Extend internal/lokc with C shims for command/window functions
 - Wire into backend seam; fakeBackend stubs for testing
@@ -1277,11 +1253,15 @@ Expected: Clean commit with all Phase 10 files.
 ## Notes
 
 - Command names are case-sensitive and must match LOK's `.uno:*` constants.
-- Window IDs are allocated by LOK and may be delivered via `EventTypeWindow`
-  events; store them for later use in window-specific APIs.
+- Window IDs are `uint32` (LOK uses `unsigned`). `SendDialogEvent` takes
+  `uint64` to match LOK's `unsigned long long`.
 - `PaintWindow*` methods follow the same pointer-safety contract as
   `PaintTileRaw`: buffer is pinned only for the synchronous C call.
 - JSON returned by `GetCommandValues` is not parsed by `lok`; callers
   unmarshal into their own types as needed.
-- All new methods on `Document` acquire the office mutex to satisfy LOK's
-  not-free-threaded requirement.
+- All new methods on `Document` use `guard()` to acquire the office mutex
+  and check both `d.closed` and `d.office.closed`.
+- `ResetWindow` and `GetFontSubset` are not available in LOK 24.8 and
+  return `ErrUnsupported`.
+- `CompleteFunction` is a no-op for non-Calc documents (LOK silently
+  ignores it).

@@ -71,6 +71,21 @@ type backend interface {
 
 	RegisterOfficeCallback(h officeHandle, handle uintptr) error
 	RegisterDocumentCallback(d documentHandle, handle uintptr) error
+
+	// Command & window operations (Phase 10).
+	GetCommandValues(d documentHandle, command string) (string, error)
+	CompleteFunction(d documentHandle, name string) error
+	SendDialogEvent(d documentHandle, windowID uint64, argsJSON string) error
+	SendContentControlEvent(d documentHandle, argsJSON string) error
+	SendFormFieldEvent(d documentHandle, argsJSON string) error
+	PostWindowKeyEvent(d documentHandle, windowID uint32, typ int, charCode, keyCode int) error
+	PostWindowMouseEvent(d documentHandle, windowID uint32, typ int, x, y int64, count int, buttons, mods int) error
+	PostWindowGestureEvent(d documentHandle, windowID uint32, typ string, x, y, offset int64) error
+	PostWindowExtTextInputEvent(d documentHandle, windowID uint32, typ int, text string) error
+	ResizeWindow(d documentHandle, windowID uint32, w, h int) error
+	PaintWindow(d documentHandle, windowID uint32, buf []byte, x, y, pxW, pxH int) error
+	PaintWindowDPI(d documentHandle, windowID uint32, buf []byte, x, y, pxW, pxH int, dpiScale float64) error
+	PaintWindowForView(d documentHandle, windowID uint32, view int, buf []byte, x, y, pxW, pxH int, dpiScale float64) error
 }
 
 // clipboardItemInternal mirrors the public lok.ClipboardItem (and
