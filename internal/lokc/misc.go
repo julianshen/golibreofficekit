@@ -41,7 +41,10 @@ static unsigned char* loke_doc_render_font(LibreOfficeKitDocument *d, const char
 */
 import "C"
 
-import "unsafe"
+import (
+	"errors"
+	"unsafe"
+)
 
 // OfficeGetFilterTypes calls pClass->getFilterTypes and returns the
 // JSON payload as a Go string. The C buffer is freed before return.
@@ -56,10 +59,15 @@ func OfficeGetFilterTypes(h OfficeHandle) (string, error) {
 	return copyAndFree(s), nil
 }
 
-// DocumentPaste calls pClass->paste. Returns ErrUnsupported on a
-// vtable miss; LOK's own "paste failed" return also surfaces as
-// ErrUnsupported because the LOK ABI does not distinguish them
-// (both come back as a 0/false, conflated by design here).
+// ErrPasteFailed is returned by DocumentPaste when LOK's paste returned
+// false (e.g. unsupported MIME type for the document type, or LO
+// rejected the payload). Distinct from ErrUnsupported, which means the
+// vtable slot itself is missing on this LO build.
+var ErrPasteFailed = errors.New("lokc: paste returned false")
+
+// DocumentPaste calls pClass->paste. Returns ErrUnsupported when the
+// vtable slot is missing and ErrPasteFailed when LO accepted the call
+// but rejected the payload (e.g. unsupported MIME type).
 func DocumentPaste(d DocumentHandle, mimeType string, data []byte) error {
 	if !d.IsValid() {
 		return ErrNilDocument
@@ -73,8 +81,11 @@ func DocumentPaste(d DocumentHandle, mimeType string, data []byte) error {
 		dataLen = C.int(len(data))
 	}
 	rc := C.loke_doc_paste(d.p, cMime, dataPtr, dataLen)
-	if rc != 1 {
+	switch rc {
+	case -1:
 		return ErrUnsupported
+	case 0:
+		return ErrPasteFailed
 	}
 	return nil
 }

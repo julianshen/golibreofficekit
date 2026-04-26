@@ -13,6 +13,7 @@ var (
 	ErrUnsupported         = errors.New("lok: operation not supported by this LibreOfficeKit build")
 	ErrMacroFailed         = errors.New("lok: macro execution failed")
 	ErrSignFailed          = errors.New("lok: document signing failed")
+	ErrPasteFailed         = errors.New("lok: paste rejected by LibreOffice")
 )
 
 // LOKError wraps an error string returned by LibreOffice itself.

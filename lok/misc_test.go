@@ -48,6 +48,14 @@ func TestPasteData_BackendError(t *testing.T) {
 	}
 }
 
+func TestPasteData_PasteFailed(t *testing.T) {
+	fb := &fakeBackend{pasteErr: ErrPasteFailed}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.PasteData("text/plain", []byte("hi")); !errors.Is(err, ErrPasteFailed) {
+		t.Errorf("want ErrPasteFailed, got %v", err)
+	}
+}
+
 // PasteData must not shadow the existing Phase-6 Document.Paste
 // convenience wrapper for .uno:Paste.
 func TestPaste_NotShadowed(t *testing.T) {
