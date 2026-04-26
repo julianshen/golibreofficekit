@@ -172,8 +172,10 @@ type fakeBackend struct {
 	pasteErr             error
 	lastSelectPart       int
 	lastSelectSelected   bool
+	selectPartErr        error
 	lastMovePos          int
 	lastMoveDup          bool
+	moveSelectedPartsErr error
 	lastRenderFontName   string
 	lastRenderFontChar   string
 	renderFontBuf        []byte
@@ -840,13 +842,13 @@ func (f *fakeBackend) DocumentPaste(_ documentHandle, mime string, data []byte) 
 func (f *fakeBackend) DocumentSelectPart(_ documentHandle, part int, selected bool) error {
 	f.lastSelectPart = part
 	f.lastSelectSelected = selected
-	return nil
+	return f.selectPartErr
 }
 
 func (f *fakeBackend) DocumentMoveSelectedParts(_ documentHandle, pos int, dup bool) error {
 	f.lastMovePos = pos
 	f.lastMoveDup = dup
-	return nil
+	return f.moveSelectedPartsErr
 }
 
 func (f *fakeBackend) DocumentRenderFont(_ documentHandle, fontName, char string) ([]byte, int, int, error) {
