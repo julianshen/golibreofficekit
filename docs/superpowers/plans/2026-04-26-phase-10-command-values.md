@@ -18,24 +18,40 @@
 
 Files created:
 
-- `lok/windows.go` — window events, paint, resize, font subset stubs.
-- `lok/windows_test.go` — unit tests for window APIs.
+- `lok/windows.go` — window event APIs (key/mouse/gesture/text/resize).
+- `lok/windows_paint.go` — window paint APIs (`PaintWindow`,
+  `PaintWindowDPI`, `PaintWindowForView`); split from `windows.go`
+  so the paint contract stays adjacent to the buffer-validation rules
+  inherited from `PaintTileRaw`.
+- `lok/windows_test.go` — unit tests for window event + paint APIs.
 - `lok/forms.go` — dialog/content-control/form-field event helpers.
 - `lok/forms_test.go` — unit tests for form events.
-- `internal/lokc/commands.c` — C shims for `getCommandValues`, `completeFunction`.
-- `internal/lokc/commands.h` — declarations for above.
+- `internal/lokc/commands.go` — Go wrappers around the command-value and
+  document-level dialog/content-control/form-field shims.
+- `internal/lokc/commands.c` — C shims for `getCommandValues`,
+  `completeFunction`, and the three send*Event slots.
+- `internal/lokc/commands.h` — declarations for `commands.c`.
+- `internal/lokc/windows.go` — Go wrappers around the window event +
+  paint shims (incl. `len(buf) == 4*pxW*pxH` validation).
 - `internal/lokc/windows.c` — C shims for window paint/resize/events.
-- `internal/lokc/windows.h` — declarations for above.
+- `internal/lokc/windows.h` — declarations for `windows.c`.
+
+Each new `internal/lokc/*.go` file carries its own cgo preamble that
+includes the matching `*.h`; there is no shared `internal/lokc/lokc.go`.
 
 Files modified:
 
-- `lok/commands.go` — **append** `GetCommandValues`, `CompleteFunction`, typed helpers.
+- `lok/commands.go` — **append** `GetCommandValues`, `CompleteFunction`,
+  and typed helpers (`IsCommandEnabled`, `GetFontNames`) to the existing
+  Phase 6 file.
 - `lok/commands_test.go` — **append** unit tests for command values.
 - `lok/backend.go` — add new interface methods.
-- `lok/real_backend.go` — forwarders for command/window methods.
-- `lok/document.go` — attach new methods to `Document`.
-- `lok/integration_test.go` — add integration smoke for command values and window paint.
-- `internal/lokc/lokc.go` — add `#include` for new headers.
+- `lok/real_backend.go` — one-line forwarders to `internal/lokc`.
+- `lok/office_test.go` — extend `fakeBackend` with Phase 10 tracking
+  fields and stub methods.
+- `lok/integration_test.go` — extend `TestIntegration_FullLifecycle`
+  with command-values and window assertions (no new top-level test that
+  would call `New` a second time).
 
 ---
 
@@ -63,8 +79,10 @@ PostWindowExtTextInputEvent(d documentHandle, windowID uint32, typ int, text str
 ResizeWindow(d documentHandle, windowID uint32, w, h int) error
 PaintWindow(d documentHandle, windowID uint32, buf []byte, x, y, pxW, pxH int) error
 PaintWindowDPI(d documentHandle, windowID uint32, buf []byte, x, y, pxW, pxH int, dpiScale float64) error
-PaintWindowForView(d documentHandle, windowID uint32, view viewHandle, buf []byte, x, y, pxW, pxH int, dpiScale float64) error
+PaintWindowForView(d documentHandle, windowID uint32, view int, buf []byte, x, y, pxW, pxH int, dpiScale float64) error
 // NOTE: ResetWindow and GetFontSubset are NOT in LOK 24.8 — omitted.
+// Views are passed as plain `int`/ViewID (matching DocumentSetView et al.);
+// no `viewHandle` brand type exists in this binding.
 ```
 
 - [ ] **Step 2: Extend fakeBackend**
@@ -73,17 +91,20 @@ In `lok/office_test.go`, add fields to `fakeBackend`:
 
 ```go
 // Phase 10: command/window tracking.
-lastCommand           string
-lastCommandResult     string
-getCommandValuesErr  error
-lastWindowID          uint32
-lastWindowX, lastWindowY int
-lastWindowBuf         []byte
-lastWindowFontName    string
-lastWindowFontData    []byte
+lastCommand                string
+lastCommandResult          string
+getCommandValuesErr        error
+completeFunctionErr        error
+sendDialogEventErr         error
+sendContentControlEventErr error
+sendFormFieldEventErr      error
+lastWindowID               uint32
+lastWindowX, lastWindowY   int
+lastWindowBuf              []byte
 ```
 
-Add stub methods (one per interface method) that record calls and return configurable errors/results. Example:
+Add stub methods (one per interface method) that record calls and return
+configurable errors/results. Example:
 
 ```go
 func (f *fakeBackend) GetCommandValues(_ documentHandle, cmd string) (string, error) {
@@ -94,9 +115,9 @@ func (f *fakeBackend) GetCommandValues(_ documentHandle, cmd string) (string, er
     return f.lastCommandResult, nil
 }
 
-func (f *fakeBackend) CompleteFunction(_ documentHandle, part int, name string) error {
+func (f *fakeBackend) CompleteFunction(_ documentHandle, name string) error {
     f.lastCommand = "CompleteFunction:" + name
-    return nil
+    return f.completeFunctionErr
 }
 
 func (f *fakeBackend) PostWindowKeyEvent(_ documentHandle, windowID uint32, typ, charCode, keyCode int) error {
@@ -113,12 +134,16 @@ Expected: FAIL — realBackend missing methods.
 
 ---
 
-## Task 2: C shims for commands
+## Task 2: `internal/lokc/commands.{go,c,h}` — command-value & document-event shims
+
+cgo lives strictly inside `internal/lokc`. The `lok` package never imports
+`"C"`. This task creates the C shim, the matching header, and the Go
+wrapper that exposes plain Go signatures.
 
 **Files:**
 - `internal/lokc/commands.h`
 - `internal/lokc/commands.c`
-- `internal/lokc/lokc.go` (add `#include`)
+- `internal/lokc/commands.go`
 
 - [ ] **Step 1: Create `commands.h`**
 
@@ -133,13 +158,19 @@ Expected: FAIL — realBackend missing methods.
 extern "C" {
 #endif
 
-// Returns 1 on success, 0 on failure (e.g. NULL handle, missing vtable).
-// On success, *out_len is set to the length of the returned string (no null terminator).
-// The caller must free the returned buffer with free().
+// getCommandValues / completeFunction
+//   Return 1 on success, 0 on failure (NULL handle, missing vtable, NULL
+//   payload from LOK). For loke_get_command_values, on success *out_len
+//   holds the strlen of the returned buffer (no null terminator), *out
+//   points at LOK's heap-allocated string — the caller frees it with
+//   free().
 int loke_get_command_values(void* doc, const char* command, char** out, size_t* out_len);
+int loke_complete_function(void* doc, const char* name);
 
-// Returns 1 on success, 0 on failure.
-int loke_complete_function(void* doc, int part, const char* name);
+// Document-level dialog / content-control / form-field events
+int loke_doc_send_dialog_event(void* doc, uint64_t window_id, const char* args_json);
+int loke_doc_send_content_control_event(void* doc, const char* args_json);
+int loke_doc_send_form_field_event(void* doc, const char* args_json);
 
 #ifdef __cplusplus
 }
@@ -149,6 +180,8 @@ int loke_complete_function(void* doc, int part, const char* name);
 ```
 
 - [ ] **Step 2: Create `commands.c`**
+
+Bodies follow the existing `internal/lokc` shim pattern:
 
 ```c
 #include "commands.h"
@@ -163,47 +196,80 @@ int loke_get_command_values(void* doc, const char* command, char** out, size_t* 
     char* s = d->pClass->getCommandValues(d, command);
     if (!s) return 0;
     *out_len = strlen(s);
-    *out = s;  // caller will free
+    *out = s;
     return 1;
 }
 
-int loke_complete_function(void* doc, int part, const char* name) {
+int loke_complete_function(void* doc, const char* name) {
     if (!doc || !name) return 0;
     LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
     if (!d->pClass || !d->pClass->completeFunction) return 0;
-    d->pClass->completeFunction(d, part, name);
+    d->pClass->completeFunction(d, name);
     return 1;
 }
+
+// Three send*Event shims follow the same shape: NULL-check, lookup
+// vtable slot, call the void function, return 1.
 ```
 
-- [ ] **Step 3: Update `lokc.go` to include commands**
+- [ ] **Step 3: Create `internal/lokc/commands.go`**
 
-The existing `lokc.go` already has a cgo preamble. Add the new headers:
+Each `internal/lokc/*.go` file carries its own cgo preamble that pulls in
+the matching header. There is no shared `lokc.go`.
 
 ```go
+//go:build linux || darwin
+
+package lokc
+
 /*
 #cgo CFLAGS: -I${SRCDIR}/../../third_party/lok -DLOK_USE_UNSTABLE_API
 #include <stdlib.h>
 #include "LibreOfficeKit/LibreOfficeKit.h"
-#include "callback.h"
-#include "commands.h"   // new
-#include "windows.h"    // new
+#include "commands.h"
 */
 import "C"
+import "unsafe"
+
+func DocumentGetCommandValues(d DocumentHandle, command string) (string, error) {
+    if !d.IsValid() {
+        return "", ErrNilDocument
+    }
+    cCmd := C.CString(command)
+    defer C.free(unsafe.Pointer(cCmd))
+    var out *C.char
+    var outLen C.size_t
+    if C.loke_get_command_values(unsafe.Pointer(d.p), cCmd, &out, &outLen) == 0 {
+        return "", ErrUnsupported
+    }
+    defer C.free(unsafe.Pointer(out))
+    return C.GoStringN(out, C.int(outLen)), nil
+}
+
+func DocumentCompleteFunction(d DocumentHandle, name string) error { /* C.CString + defer C.free + 0/1 → ErrUnsupported/nil */ }
+func DocumentSendDialogEvent(d DocumentHandle, windowID uint64, argsJSON string) error { /* same shape */ }
+func DocumentSendContentControlEvent(d DocumentHandle, argsJSON string) error { /* same shape */ }
+func DocumentSendFormFieldEvent(d DocumentHandle, argsJSON string) error { /* same shape */ }
 ```
 
-- [ ] **Step 4: Build C code**
+Every C string allocated for a LOK call is freed via `defer C.free` in
+the same function. There are no cgo allocations that escape the
+function boundary except the `out` buffer from `getCommandValues`,
+which is freed before the function returns.
+
+- [ ] **Step 4: Build**
 
 Run: `go build ./internal/lokc`
 Expected: compiles cleanly.
 
 ---
 
-## Task 3: C shims for windows
+## Task 3: `internal/lokc/windows.{go,c,h}` — window event & paint shims
 
 **Files:**
 - `internal/lokc/windows.h`
 - `internal/lokc/windows.c`
+- `internal/lokc/windows.go`
 
 - [ ] **Step 1: Create `windows.h`**
 
@@ -218,23 +284,18 @@ Expected: compiles cleanly.
 extern "C" {
 #endif
 
-// Window events
+// Window events — all return 1 on success, 0 on NULL handle / missing vtable.
 int loke_post_window_key_event(void* doc, uint32_t window_id, int type, int char_code, int key_code);
 int loke_post_window_mouse_event(void* doc, uint32_t window_id, int type, int64_t x, int64_t y, int count, int buttons, int mods);
 int loke_post_window_gesture_event(void* doc, uint32_t window_id, const char* typ, int64_t x, int64_t y, int64_t offset);
 int loke_post_window_ext_text_input_event(void* doc, uint32_t window_id, int typ, const char* text);
 int loke_resize_window(void* doc, uint32_t window_id, int w, int h);
 
-// Window paint — x, y are top-left of source rect in twips
+// Window paint — x, y are top-left of source rect in twips. Buffer must
+// have len == 4*pxW*pxH (validated in Go layer); LOK fills with premul BGRA.
 int loke_paint_window(void* doc, uint32_t window_id, void* buf, int x, int y, int px_w, int px_h);
-int loke_paint_window_dpi(void* doc, uint32_t window_id, void* buf, int x, int y, int px_w, int px_h, double dpi_scale);
-int loke_paint_window_for_view(void* doc, uint32_t window_id, int view_id, void* buf, int x, int y, int px_w, int px_h, double dpi_scale);
-
-// Font subset — NOT in LOK 24.8, stubbed for future
-int loke_get_font_subset(void* doc, const char* font_name, char** out, size_t* out_len);
-
-// Reset window — NOT in LOK 24.8, stubbed for future
-int loke_reset_window(void* doc, uint32_t window_id);
+int loke_paint_window_dpi(void* doc, uint32_t window_id, void* buf, int x, int y, int px_w, int px_h, double dpiscale);
+int loke_paint_window_for_view(void* doc, uint32_t window_id, int view_id, void* buf, int x, int y, int px_w, int px_h, double dpiscale);
 
 #ifdef __cplusplus
 }
@@ -243,82 +304,71 @@ int loke_reset_window(void* doc, uint32_t window_id);
 #endif
 ```
 
+`resetWindow` and `getFontSubset` slots do not exist in LOK 24.8; no
+shim is added for either. Revisit if/when the C ABI exposes them.
+
 - [ ] **Step 2: Create `windows.c`**
 
-```c
-#include "windows.h"
-#include "LibreOfficeKit/LibreOfficeKit.h"
-#include <stdlib.h>
-#include <string.h>
+Each shim NULL-checks `doc` (and any string arg), looks up the vtable
+slot, and forwards. Since every LOK window function returns `void`, the
+shim returns `1` once the call completes:
 
+```c
 int loke_post_window_key_event(void* doc, uint32_t window_id, int type, int char_code, int key_code) {
     if (!doc) return 0;
     LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
     if (!d->pClass || !d->pClass->postWindowKeyEvent) return 0;
-    return d->pClass->postWindowKeyEvent(d, window_id, type, char_code, key_code), 1;
+    d->pClass->postWindowKeyEvent(d, window_id, type, char_code, key_code);
+    return 1;
 }
-
-int loke_post_window_mouse_event(void* doc, uint32_t window_id, int type, int64_t x, int64_t y, int count, int buttons, int mods) {
-    if (!doc) return 0;
-    LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
-    if (!d->pClass || !d->pClass->postWindowMouseEvent) return 0;
-    return d->pClass->postWindowMouseEvent(d, window_id, type, x, y, count, buttons, mods), 1;
-}
-
-int loke_post_window_gesture_event(void* doc, uint32_t window_id, const char* typ, int64_t x, int64_t y, int64_t offset) {
-    if (!doc || !typ) return 0;
-    LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
-    if (!d->pClass || !d->pClass->postWindowGestureEvent) return 0;
-    return d->pClass->postWindowGestureEvent(d, window_id, typ, x, y, offset), 1;
-}
-
-int loke_post_window_ext_text_input_event(void* doc, uint32_t window_id, int typ, const char* text) {
-    if (!doc || !text) return 0;
-    LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
-    if (!d->pClass || !d->pClass->postWindowExtTextInputEvent) return 0;
-    return d->pClass->postWindowExtTextInputEvent(d, window_id, typ, text), 1;
-}
-
-int loke_resize_window(void* doc, uint32_t window_id, int w, int h) {
-    if (!doc) return 0;
-    LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
-    if (!d->pClass || !d->pClass->resizeWindow) return 0;
-    return d->pClass->resizeWindow(d, window_id, w, h), 1;
-}
-
-int loke_paint_window(void* doc, uint32_t window_id, void* buf, int x, int y, int px_w, int px_h) {
-    if (!doc || !buf) return 0;
-    LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
-    if (!d->pClass || !d->pClass->paintWindow) return 0;
-    return d->pClass->paintWindow(d, window_id, (unsigned char*)buf, x, y, px_w, px_h), 1;
-}
-
-int loke_paint_window_dpi(void* doc, uint32_t window_id, void* buf, int x, int y, int px_w, int px_h, double dpi_scale) {
-    if (!doc || !buf) return 0;
-    LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
-    if (!d->pClass || !d->pClass->paintWindowDPI) return 0;
-    return d->pClass->paintWindowDPI(d, window_id, (unsigned char*)buf, x, y, px_w, px_h, dpi_scale), 1;
-}
-
-int loke_paint_window_for_view(void* doc, uint32_t window_id, int view_id, void* buf, int x, int y, int px_w, int px_h, double dpi_scale) {
-    if (!doc || !buf) return 0;
-    LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
-    if (!d->pClass || !d->pClass->paintWindowForView) return 0;
-    return d->pClass->paintWindowForView(d, window_id, (unsigned char*)buf, x, y, px_w, px_h, dpi_scale, view_id), 1;
-}
-
-int loke_get_font_subset(void* doc, const char* font_name, char** out, size_t* out_len) {
-    (void)doc; (void)font_name; (void)out; (void)out_len;
-    return 0;  // NOT IMPLEMENTED in LOK 24.8
-}
-
-int loke_reset_window(void* doc, uint32_t window_id) {
-    (void)doc; (void)window_id;
-    return 0;  // NOT IMPLEMENTED in LOK 24.8
-}
+// remaining shims follow the same shape
 ```
 
-- [ ] **Step 3: Build**
+The paint shims cast `void* buf` to `unsigned char*` before invoking
+LOK; the buffer is pinned by the Go runtime for the synchronous call.
+
+- [ ] **Step 3: Create `internal/lokc/windows.go`**
+
+```go
+//go:build linux || darwin
+
+package lokc
+
+/*
+#cgo CFLAGS: -I${SRCDIR}/../../third_party/lok -DLOK_USE_UNSTABLE_API
+#include <stdlib.h>
+#include "LibreOfficeKit/LibreOfficeKit.h"
+#include "windows.h"
+*/
+import "C"
+import (
+    "errors"
+    "unsafe"
+)
+
+func DocumentPostWindowKeyEvent(d DocumentHandle, windowID uint32, typ, charCode, keyCode int) error { /* 0 → ErrUnsupported */ }
+func DocumentPostWindowMouseEvent(d DocumentHandle, windowID uint32, typ int, x, y int64, count int, buttons, mods int) error { /* same */ }
+// ... gesture, ext-text-input, resize
+func DocumentPaintWindow(d DocumentHandle, windowID uint32, buf []byte, x, y, pxW, pxH int) error {
+    if !d.IsValid() {
+        return ErrNilDocument
+    }
+    if len(buf) != 4*pxW*pxH {
+        return errors.New("lokc: buffer size mismatch")
+    }
+    if C.loke_paint_window(unsafe.Pointer(d.p), C.uint32_t(windowID), unsafe.Pointer(&buf[0]),
+        C.int(x), C.int(y), C.int(pxW), C.int(pxH)) == 0 {
+        return ErrUnsupported
+    }
+    return nil
+}
+// PaintWindowDPI / PaintWindowForView mirror the same shape with their extra args.
+```
+
+The Go layer is the right place for `len(buf) != 4*pxW*pxH` validation —
+it keeps `unsafe.Pointer(&buf[0])` from indexing into a too-small slice.
+
+- [ ] **Step 4: Build**
 
 Run: `go build ./internal/lokc`
 Expected: compiles cleanly.
@@ -327,193 +377,59 @@ Expected: compiles cleanly.
 
 ## Task 4: realBackend forwarders
 
+`lok/real_backend.go` is **not** a cgo file. Each forwarder is a
+one-line delegate to the corresponding `lokc.Document*` Go wrapper from
+Task 2/3.
+
 **Files:**
 - `lok/real_backend.go`
-- `internal/lokc/callback.go` (add DispatchHandle helpers — already present from Phase 9)
 
-- [ ] **Step 1: Add forwarders in `lok/real_backend.go`**
-
-Before the `var _ backend = realBackend{}` line, add:
+- [ ] **Step 1: Add forwarders before `var _ backend = realBackend{}`**
 
 ```go
 // --- Command & window operations (Phase 10) ---
 
 func (realBackend) GetCommandValues(d documentHandle, command string) (string, error) {
-    var out *C.char
-    var outLen C.size_t
-    ok := C.loke_get_command_values(mustDoc(d).d, C.CString(command), &out, &outLen)
-    if ok == 0 {
-        // getCommandValues returns NULL for unknown commands or errors.
-        // LOK has no document-level getError, so we return a generic error.
-        return "", ErrUnsupported
-    }
-    defer C.free(unsafe.Pointer(out))
-    return C.GoStringN(out, C.int(outLen)), nil
+    return lokc.DocumentGetCommandValues(mustDoc(d).d, command)
 }
 
 func (realBackend) CompleteFunction(d documentHandle, name string) error {
-	cName := C.CString(name)
-	defer C.free(unsafe.Pointer(cName))
-	ok := C.loke_complete_function(mustDoc(d).d, cName)
-	if ok == 0 {
-		return ErrUnsupported
-	}
-	return nil
-}
-    return nil
+    return lokc.DocumentCompleteFunction(mustDoc(d).d, name)
 }
 
 func (realBackend) SendDialogEvent(d documentHandle, windowID uint64, argsJSON string) error {
-    cjson := C.CString(argsJSON)
-    defer C.free(unsafe.Pointer(cjson))
-    // sendDialogEvent on Document takes uint64 window ID.
-    // We need a C shim that calls the Document vtable slot.
-    ok := C.loke_doc_send_dialog_event(mustDoc(d).d, C.uint64_t(windowID), cjson)
-    if ok == 0 {
-        return ErrUnsupported
-    }
-    return nil
+    return lokc.DocumentSendDialogEvent(mustDoc(d).d, windowID, argsJSON)
 }
 
 func (realBackend) SendContentControlEvent(d documentHandle, argsJSON string) error {
-    cjson := C.CString(argsJSON)
-    defer C.free(unsafe.Pointer(cjson))
-    ok := C.loke_doc_send_content_control_event(mustDoc(d).d, cjson)
-    if ok == 0 {
-        return ErrUnsupported
-    }
-    return nil
+    return lokc.DocumentSendContentControlEvent(mustDoc(d).d, argsJSON)
 }
 
 func (realBackend) SendFormFieldEvent(d documentHandle, argsJSON string) error {
-    cjson := C.CString(argsJSON)
-    defer C.free(unsafe.Pointer(cjson))
-    ok := C.loke_doc_send_form_field_event(mustDoc(d).d, cjson)
-    if ok == 0 {
-        return ErrUnsupported
-    }
-    return nil
+    return lokc.DocumentSendFormFieldEvent(mustDoc(d).d, argsJSON)
 }
 
 func (realBackend) PostWindowKeyEvent(d documentHandle, windowID uint32, typ, charCode, keyCode int) error {
-    ok := C.loke_post_window_key_event(mustDoc(d).d, C.uint32_t(windowID), C.int(typ), C.int(charCode), C.int(keyCode))
-    if ok == 0 {
-        return ErrUnsupported
-    }
-    return nil
+    return lokc.DocumentPostWindowKeyEvent(mustDoc(d).d, windowID, typ, charCode, keyCode)
 }
 
 func (realBackend) PostWindowMouseEvent(d documentHandle, windowID uint32, typ int, x, y int64, count int, buttons, mods int) error {
-    ok := C.loke_post_window_mouse_event(mustDoc(d).d, C.uint32_t(windowID), C.int(typ), C.int64_t(x), C.int64_t(y), C.int(count), C.int(buttons), C.int(mods))
-    if ok == 0 {
-        return ErrUnsupported
-    }
-    return nil
+    return lokc.DocumentPostWindowMouseEvent(mustDoc(d).d, windowID, typ, x, y, count, buttons, mods)
 }
 
-func (realBackend) PostWindowGestureEvent(d documentHandle, windowID uint32, typ string, x, y, offset int64) error {
-    ctyp := C.CString(typ)
-    defer C.free(unsafe.Pointer(ctyp))
-    ok := C.loke_post_window_gesture_event(mustDoc(d).d, C.uint32_t(windowID), ctyp, C.int64_t(x), C.int64_t(y), C.int64_t(offset))
-    if ok == 0 {
-        return ErrUnsupported
-    }
-    return nil
-}
+// PostWindowGestureEvent, PostWindowExtTextInputEvent, ResizeWindow,
+// PaintWindow, PaintWindowDPI follow the same one-liner pattern.
 
-func (realBackend) PostWindowExtTextInputEvent(d documentHandle, windowID uint32, typ int, text string) error {
-    ctext := C.CString(text)
-    defer C.free(unsafe.Pointer(ctext))
-    ok := C.loke_post_window_ext_text_input_event(mustDoc(d).d, C.uint32_t(windowID), C.int(typ), ctext)
-    if ok == 0 {
-        return ErrUnsupported
-    }
-    return nil
-}
-
-func (realBackend) ResizeWindow(d documentHandle, windowID uint32, w, h int) error {
-    ok := C.loke_resize_window(mustDoc(d).d, C.uint32_t(windowID), C.int(w), C.int(h))
-    if ok == 0 {
-        return ErrUnsupported
-    }
-    return nil
-}
-
-func (realBackend) PaintWindow(d documentHandle, windowID uint32, buf []byte, x, y, pxW, pxH int) error {
-    if err := checkPaintBuf("PaintWindow", buf, pxW, pxH); err != nil {
-        return err
-    }
-    ok := C.loke_paint_window(mustDoc(d).d, C.uint32_t(windowID), unsafe.Pointer(&buf[0]), C.int(x), C.int(y), C.int(pxW), C.int(pxH))
-    if ok == 0 {
-        return ErrUnsupported
-    }
-    return nil
-}
-
-func (realBackend) PaintWindowDPI(d documentHandle, windowID uint32, buf []byte, x, y, pxW, pxH int, dpiScale float64) error {
-    if err := checkPaintBuf("PaintWindowDPI", buf, pxW, pxH); err != nil {
-        return err
-    }
-    ok := C.loke_paint_window_dpi(mustDoc(d).d, C.uint32_t(windowID), unsafe.Pointer(&buf[0]), C.int(x), C.int(y), C.int(pxW), C.int(pxH), C.double(dpiScale))
-    if ok == 0 {
-        return ErrUnsupported
-    }
-    return nil
-}
-
-func (realBackend) PaintWindowForView(d documentHandle, windowID uint32, view viewHandle, buf []byte, x, y, pxW, pxH int, dpiScale float64) error {
-    if err := checkPaintBuf("PaintWindowForView", buf, pxW, pxH); err != nil {
-        return err
-    }
-    // viewHandle is internal; convert to int (ViewID) for LOK.
-    ok := C.loke_paint_window_for_view(mustDoc(d).d, C.uint32_t(windowID), C.int(view), unsafe.Pointer(&buf[0]), C.int(x), C.int(y), C.int(pxW), C.int(pxH), C.double(dpiScale))
-    if ok == 0 {
-        return ErrUnsupported
-    }
-    return nil
+func (realBackend) PaintWindowForView(d documentHandle, windowID uint32, view int, buf []byte, x, y, pxW, pxH int, dpiScale float64) error {
+    return lokc.DocumentPaintWindowForView(mustDoc(d).d, windowID, view, buf, x, y, pxW, pxH, dpiScale)
 }
 ```
 
-Also add to `commands.h` the Document-level sendDialogEvent, sendContentControlEvent, sendFormFieldEvent:
+No `import "C"`, no `unsafe`, no `C.CString`, no `defer C.free` — all of
+that lives in `internal/lokc` (Task 2/3). The `lok` package's only new
+import is the existing `lokc` import.
 
-```c
-// In commands.h, add:
-int loke_doc_send_dialog_event(void* doc, uint64_t window_id, const char* args_json);
-int loke_doc_send_content_control_event(void* doc, const char* args_json);
-int loke_doc_send_form_field_event(void* doc, const char* args_json);
-```
-
-And in `commands.c`:
-
-```c
-int loke_doc_send_dialog_event(void* doc, uint64_t window_id, const char* args_json) {
-    if (!doc || !args_json) return 0;
-    LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
-    if (!d->pClass || !d->pClass->sendDialogEvent) return 0;
-    d->pClass->sendDialogEvent(d, window_id, args_json);
-    return 1;
-}
-int loke_doc_send_content_control_event(void* doc, const char* args_json) {
-    if (!doc || !args_json) return 0;
-    LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
-    if (!d->pClass || !d->pClass->sendContentControlEvent) return 0;
-    d->pClass->sendContentControlEvent(d, args_json);
-    return 1;
-}
-int loke_doc_send_form_field_event(void* doc, const char* args_json) {
-    if (!doc || !args_json) return 0;
-    LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
-    if (!d->pClass || !d->pClass->sendFormFieldEvent) return 0;
-    d->pClass->sendFormFieldEvent(d, args_json);
-    return 1;
-}
-```
-
-- [ ] **Step 2: Add `checkPaintBuf` import**
-
-`real_backend.go` needs access to `checkPaintBuf`. Since it's in the same package (`lok`), it can call it directly. No change needed.
-
-- [ ] **Step 3: Build**
+- [ ] **Step 2: Build**
 
 Run: `go build ./...`
 Expected: compiles cleanly.
@@ -700,24 +616,26 @@ Expected: PASS.
 
 ---
 
-## Task 6: Public API — `lok/windows.go`
+## Task 6: Public API — `lok/windows.go` and `lok/windows_paint.go`
 
 **Files:**
-- `lok/windows.go`
-- `lok/windows_test.go`
+- `lok/windows.go`        — events (key/mouse/gesture/text/resize)
+- `lok/windows_paint.go`  — paint (PaintWindow / DPI / ForView)
+- `lok/windows_test.go`   — unit tests for both
 
-- [ ] **Step 1: Implement window event methods**
+The split keeps the paint contract (buffer pinning, BGRA layout)
+adjacent to the paint methods without the event surface having to read
+that block. Both files live in package `lok` and need no imports
+beyond what their bodies use — neither imports `errors` or `lokc`
+directly; `requireInt32*` and the office mutex come from the same
+package.
 
-Create `lok/windows.go`:
+- [ ] **Step 1: Create `lok/windows.go` with the event methods**
 
 ```go
 //go:build linux || darwin
 
 package lok
-
-import (
-    "errors"
-)
 
 // PostWindowKeyEvent posts a key event to a specific window.
 func (d *Document) PostWindowKeyEvent(windowID uint32, typ KeyEventType, charCode, keyCode int) error {
@@ -745,25 +663,8 @@ func (d *Document) PostWindowMouseEvent(windowID uint32, typ MouseEventType, x, 
     return d.office.be.PostWindowMouseEvent(d.h, windowID, int(typ), x, y, count, int(buttons), int(mods))
 }
 
-// PostWindowGestureEvent posts a gesture event (pan/zoom) to a window.
-func (d *Document) PostWindowGestureEvent(windowID uint32, typ string, x, y, offset int64) error {
-    unlock, err := d.guard()
-    if err != nil {
-        return err
-    }
-    defer unlock()
-    return d.office.be.PostWindowGestureEvent(d.h, windowID, typ, x, y, offset)
-}
-
-// PostWindowExtTextInputEvent posts extended text input to a window.
-func (d *Document) PostWindowExtTextInputEvent(windowID uint32, typ int, text string) error {
-    unlock, err := d.guard()
-    if err != nil {
-        return err
-    }
-    defer unlock()
-    return d.office.be.PostWindowExtTextInputEvent(d.h, windowID, typ, text)
-}
+// PostWindowGestureEvent / PostWindowExtTextInputEvent follow the same
+// shape: guard → forward to backend.
 
 // ResizeWindow changes the size of a window.
 func (d *Document) ResizeWindow(windowID uint32, w, h int) error {
@@ -779,16 +680,17 @@ func (d *Document) ResizeWindow(windowID uint32, w, h int) error {
 }
 ```
 
-- [ ] **Step 2: Implement window paint methods**
-
-Append to `lok/windows.go`:
+- [ ] **Step 2: Create `lok/windows_paint.go`**
 
 ```go
-import "github.com/julianshen/golibreofficekit/internal/lokc"
+//go:build linux || darwin
 
-// PaintWindow paints a window into the provided buffer. The buffer must
-// have length 4*pxW*pxH. Returns premultiplied BGRA (same format as PaintTileRaw).
-// x, y specify the top-left corner of the source rectangle in twips.
+package lok
+
+// PaintWindow paints a window into the provided buffer. len(buf) must
+// equal 4*pxW*pxH (validated in internal/lokc); the format is
+// premultiplied BGRA (same as PaintTileRaw). x, y are the top-left of
+// the source rectangle in twips.
 func (d *Document) PaintWindow(windowID uint32, buf []byte, x, y, pxW, pxH int) error {
     unlock, err := d.guard()
     if err != nil {
@@ -798,42 +700,22 @@ func (d *Document) PaintWindow(windowID uint32, buf []byte, x, y, pxW, pxH int) 
     return d.office.be.PaintWindow(d.h, windowID, buf, x, y, pxW, pxH)
 }
 
-// PaintWindowDPI paints a window with a DPI scale factor.
-func (d *Document) PaintWindowDPI(windowID uint32, buf []byte, x, y, pxW, pxH int, dpiScale float64) error {
-    unlock, err := d.guard()
-    if err != nil {
-        return err
-    }
-    defer unlock()
-    return d.office.be.PaintWindowDPI(d.h, windowID, buf, x, y, pxW, pxH, dpiScale)
-}
-
-// PaintWindowForView paints a window for a specific view ID.
+// PaintWindowDPI / PaintWindowForView follow the same shape; the latter
+// passes int(view) directly — there is no view-handle indirection.
 func (d *Document) PaintWindowForView(windowID uint32, view ViewID, buf []byte, x, y, pxW, pxH int, dpiScale float64) error {
     unlock, err := d.guard()
     if err != nil {
         return err
     }
     defer unlock()
-    vh, ok := d.viewHandles[view]
-    if !ok {
-        return ErrInvalidOption
-    }
-    return d.office.be.PaintWindowForView(d.h, windowID, vh, buf, x, y, pxW, pxH, dpiScale)
-}
-
-// ResetWindow resets a window's internal state.
-// NOTE: Not available in LOK 24.8. Always returns ErrUnsupported.
-func (d *Document) ResetWindow(windowID uint32) error {
-    return ErrUnsupported
-}
-
-// GetFontSubset retrieves a subset of a font as a byte slice (SFNT).
-// NOTE: Not available in LOK 24.8. Always returns ErrUnsupported.
-func (d *Document) GetFontSubset(fontName string) ([]byte, error) {
-    return nil, ErrUnsupported
+    return d.office.be.PaintWindowForView(d.h, windowID, int(view), buf, x, y, pxW, pxH, dpiScale)
 }
 ```
+
+`ResetWindow` and `GetFontSubset` are intentionally not exported — the
+LOK 24.8 vtable lacks both slots, and stubbing them would burn API
+surface for hypothetical future versions (CLAUDE.md "don't design for
+hypothetical future requirements"). Spec §9 records the deferral.
 
 - [ ] **Step 3: Write unit tests**
 
@@ -857,8 +739,7 @@ func TestPostWindowKeyEvent(t *testing.T) {
     doc, _ := o.Load("/tmp/x.odt")
     defer doc.Close()
 
-    err := doc.PostWindowKeyEvent(123, KeyEventInput, 'A', 65)
-    if err != nil {
+    if err := doc.PostWindowKeyEvent(123, KeyEventInput, 'A', 65); err != nil {
         t.Fatal(err)
     }
     if fb.lastWindowID != 123 {
@@ -874,8 +755,7 @@ func TestPostWindowMouseEvent(t *testing.T) {
     doc, _ := o.Load("/tmp/x.odt")
     defer doc.Close()
 
-    err := doc.PostWindowMouseEvent(456, MouseButtonDown, 100, 200, 1, MouseLeft, ModShift)
-    if err != nil {
+    if err := doc.PostWindowMouseEvent(456, MouseButtonDown, 100, 200, 1, MouseLeft, ModShift); err != nil {
         t.Fatal(err)
     }
 }
@@ -887,8 +767,7 @@ func TestResizeWindow_InvalidSize(t *testing.T) {
     doc, _ := o.Load("/tmp/x.odt")
     defer doc.Close()
 
-    err := doc.ResizeWindow(1, -10, 100)
-    if !errors.Is(err, ErrInvalidOption) {
+    if err := doc.ResizeWindow(1, -10, 100); !errors.Is(err, ErrInvalidOption) {
         t.Errorf("want ErrInvalidOption, got %v", err)
     }
 }
@@ -901,42 +780,19 @@ func TestPaintWindow_Closed(t *testing.T) {
     doc.Close()
 
     buf := make([]byte, 4*100*100)
-    err := doc.PaintWindow(1, buf, 0, 0, 100, 100)
-    if !errors.Is(err, ErrClosed) {
+    if err := doc.PaintWindow(1, buf, 0, 0, 100, 100); !errors.Is(err, ErrClosed) {
         t.Errorf("want ErrClosed, got %v", err)
-    }
-}
-
-func TestGetFontSubset_Unavailable(t *testing.T) {
-    withFakeBackend(t, &fakeBackend{})
-    o, _ := New("/install")
-    defer o.Close()
-    doc, _ := o.Load("/tmp/x.odt")
-    defer doc.Close()
-
-    _, err := doc.GetFontSubset("Arial")
-    if !errors.Is(err, ErrUnsupported) {
-        t.Errorf("want ErrUnsupported, got %v", err)
-    }
-}
-
-func TestResetWindow_Unavailable(t *testing.T) {
-    withFakeBackend(t, &fakeBackend{})
-    o, _ := New("/install")
-    defer o.Close()
-    doc, _ := o.Load("/tmp/x.odt")
-    defer doc.Close()
-
-    err := doc.ResetWindow(1)
-    if !errors.Is(err, ErrUnsupported) {
-        t.Errorf("want ErrUnsupported, got %v", err)
     }
 }
 ```
 
+Buffer-size validation lives in `internal/lokc` (see Task 3 Step 3) and
+is exercised by `internal/lokc/windows_test.go`, so the lok-level tests
+cover the guard/forward path only.
+
 - [ ] **Step 4: Run tests**
 
-Run: `go test ./lok -run 'TestPostWindow|TestResizeWindow|TestPaintWindow|TestGetFontSubset|TestResetWindow' -v`
+Run: `go test ./lok -run 'TestPostWindow|TestResizeWindow|TestPaintWindow' -v`
 Expected: PASS.
 
 ---
@@ -1062,104 +918,93 @@ Expected: PASS.
 **Files:**
 - `lok/integration_test.go`
 
-- [ ] **Step 1: Add command values integration test**
+`lok_init` is a one-shot per process — see the file header (`lok/integration_test.go:14-32`)
+and CLAUDE.md memory ("Singleton per process … integration tests share
+ONE New/Close pair"). The package today exposes no `testOffice` helper;
+all integration assertions live inside `TestIntegration_FullLifecycle`
+and reuse its local `o`. Phase 10 follows the same pattern: extend that
+test, do not introduce new top-level integration tests.
 
-Append to `lok/integration_test.go` (reusing existing package-level Office):
+- [ ] **Step 1: Extend `TestIntegration_FullLifecycle` with command-value assertions**
+
+After the existing `doc, err := o.Load(fixture)` block, add:
 
 ```go
-// TestIntegration_CommandValues tests GetCommandValues with a real LOK instance.
-// Requires LOK_PATH to be set and reuses the package-level Office.
-func TestIntegration_CommandValues(t *testing.T) {
-    if testing.Short() {
-        t.Skip("skipping integration test in short mode")
+// Phase 10: command values.
+raw, err := doc.GetCommandValues(".uno:Save")
+if err != nil {
+    t.Errorf("GetCommandValues(.uno:Save): %v", err)
+} else {
+    t.Logf(".uno:Save: %s", raw)
+    var m map[string]any
+    if jerr := json.Unmarshal(raw, &m); jerr != nil {
+        t.Errorf("GetCommandValues returned invalid JSON: %v", jerr)
     }
-    if lokPath == "" {
-        t.Skip("LOK_PATH not set")
-    }
-    // Use the package-level Office created in TestIntegration_FullLifecycle
-    // (see init or testMain). For simplicity, we create a doc here.
-    docPath := "testdata/hello.odt"
-    doc, err := testOffice.Load(docPath)
-    if err != nil {
-        t.Skipf("cannot load %s: %v", docPath, err)
-    }
-    defer doc.Close()
+}
 
-    raw, err := doc.GetCommandValues(".uno:Save")
-    if err != nil {
-        t.Errorf("GetCommandValues(.uno:Save): %v", err)
-    } else {
-        t.Logf(".uno:Save command values: %s", raw)
-        var m map[string]interface{}
-        if err := json.Unmarshal(raw, &m); err != nil {
-            t.Errorf("GetCommandValues returned invalid JSON: %v", err)
-        }
-    }
+// CompleteFunction is silent for non-Calc documents; just verify it
+// doesn't blow up on the loaded fixture.
+if err := doc.CompleteFunction("SUM"); err != nil && !errors.Is(err, ErrUnsupported) {
+    t.Errorf("CompleteFunction: %v", err)
 }
 ```
 
-- [ ] **Step 2: Add window paint integration test**
+Add `"encoding/json"` to the file's import block if not already present.
 
-Append:
+- [ ] **Step 2: Extend `TestIntegration_FullLifecycle` with window event assertions**
+
+LOK does not expose a synchronous way to discover a window ID; the IDs
+arrive asynchronously via `EventTypeWindow` callbacks (Phase 9). The
+test attaches a listener, drives an interaction that LOK is known to
+respond to with a window event, and skips with a logged message if no
+window ID surfaces inside a short deadline:
 
 ```go
-// TestIntegration_WindowPaint tests PaintWindow with a real LOK instance.
-func TestIntegration_WindowPaint(t *testing.T) {
-    if testing.Short() {
-        t.Skip("skipping integration test in short mode")
-    }
-    if lokPath == "" {
-        t.Skip("LOK_PATH not set")
-    }
-
-    doc, err := testOffice.Load("testdata/hello.odt")
-    if err != nil {
-        t.Skipf("cannot load document: %v", err)
-    }
-    defer doc.Close()
-
-    // Create a second view.
-    viewID, err := doc.CreateView()
-    if err != nil {
-        t.Skipf("cannot create view: %v", err)
-    }
-    defer doc.DestroyView(viewID)
-
-    // Try PaintWindowForView — may be unsupported, that's OK.
-    buf := make([]byte, 4*200*200)
-    err = doc.PaintWindowForView(1, viewID, buf, 0, 0, 200, 200, 1.0)
-    if err != nil {
-        var lokErr *LOKError
-        if errors.As(err, &lokErr) {
-            t.Skipf("PaintWindowForView not supported: %v", err)
-        }
-        t.Errorf("PaintWindowForView: %v", err)
-    } else {
-        nonZero := 0
-        for _, b := range buf {
-            if b != 0 {
-                nonZero++
-            }
-        }
-        if nonZero == 0 {
-            t.Error("PaintWindowForView produced all-zero buffer")
+// Phase 10: window event smoke. LOK only allocates window IDs in
+// response to UI activity; if none arrive within the deadline, skip
+// the body rather than fail (the rest of the lifecycle has run).
+gotID := make(chan uint32, 1)
+unsubscribe, _ := doc.AddListener(func(e Event) {
+    if e.Type == EventTypeWindow {
+        select {
+        case gotID <- parseWindowIDFromPayload(e.Payload):
+        default:
         }
     }
+})
+defer unsubscribe()
+
+// Trigger something likely to produce a window: opening the styles sidebar.
+_ = doc.PostUnoCommand(".uno:DesignerDialog", "", false)
+
+select {
+case wid := <-gotID:
+    if err := doc.ResizeWindow(wid, 200, 200); err != nil {
+        t.Errorf("ResizeWindow: %v", err)
+    }
+case <-time.After(2 * time.Second):
+    t.Logf("no EventTypeWindow within deadline; skipping window-event smoke")
 }
 ```
 
-- [ ] **Step 3: Ensure package-level Office is available**
+`parseWindowIDFromPayload` is a tiny test helper that decodes the JSON
+payload LOK delivers for `EventTypeWindow` (a JSON object with an
+`"id"` field). Keep it in the same test file.
 
-The existing `integration_test.go` already has a `testOffice` pattern. Follow it.
-
-- [ ] **Step 4: Run integration tests**
+- [ ] **Step 3: Run integration tests**
 
 ```bash
-GODEBUG=asyncpreemptoff=1 LOK_PATH=/usr/lib/libreoffice/program \
-  go test -tags=lok_integration -run 'TestIntegration_Command|TestIntegration_Window' ./lok -v
+make test-integration
+# equivalent: GODEBUG=asyncpreemptoff=1 LOK_PATH=/usr/lib/libreoffice/program \
+#   go test -tags=lok_integration -run TestIntegration_FullLifecycle ./lok -v
 ```
 
-Expected: PASS or SKIP (if features not available).
+`GODEBUG=asyncpreemptoff=1` is required — LO installs SIGWINCH/SIGPIPE
+handlers without `SA_ONSTACK` and Go's async preemption (SIGURG)
+crashes the runtime otherwise. The `Makefile` target sets it for you.
+
+Expected: PASS, with the window-event smoke either asserting
+`ResizeWindow` cleanly or logging the skip.
 
 ---
 
@@ -1185,13 +1030,17 @@ go tool cover -html=coverage.out -o coverage.html
 
 Verify uncovered lines are trivial or cgo wrappers.
 
-- [ ] **Step 3: Run full test suite**
+- [ ] **Step 3: Race detector — unit tests only**
 
 ```bash
 go test -race ./lok/...
 ```
 
-Expected: All tests pass, no race conditions.
+Expected: All unit tests pass, no race conditions.
+
+`-race` is **not** combined with `-tags=lok_integration` per CLAUDE.md
+memory ("no -race on test-integration"); LO's signal-handler quirks
+make race-instrumented integration runs unstable.
 
 ---
 
@@ -1217,14 +1066,19 @@ git checkout -b feat/command-values main
 git add .
 git commit -m "feat(lok): Phase 10 — command values & window events
 
-- Add Document.GetCommandValues and CompleteFunction
-- Add window event APIs: PostWindow*Event, ResizeWindow
-- Add window paint APIs: PaintWindow*, GetFontSubset (stubbed)
-- Add dialog/content-control/form-field event helpers
-- Extend internal/lokc with C shims for command/window functions
-- Wire into backend seam; fakeBackend stubs for testing
-- Unit tests for all new APIs
-- Integration smoke tests for command values and window paint
+- Add Document.GetCommandValues, CompleteFunction, IsCommandEnabled,
+  GetFontNames (appended to existing lok/commands.go)
+- Add window event APIs: PostWindow{Key,Mouse,Gesture,ExtTextInput}Event,
+  ResizeWindow (lok/windows.go)
+- Add window paint APIs: PaintWindow, PaintWindowDPI, PaintWindowForView
+  (lok/windows_paint.go)
+- Add dialog/content-control/form-field event helpers (lok/forms.go)
+- internal/lokc: new commands.{go,c,h} and windows.{go,c,h} expose plain
+  Go signatures over the new vtable slots (lok/real_backend.go stays
+  cgo-free, one-line forwarders only)
+- fakeBackend stubs and unit tests for the new surface
+- Extend TestIntegration_FullLifecycle with command-value and window-event
+  smoke checks (no new top-level integration test)
 - Coverage ≥ 90% for lok package"
 ```
 
@@ -1242,13 +1096,13 @@ Expected: Clean commit with all Phase 10 files.
 ## Success Criteria
 
 - [ ] All unit tests pass (`go test ./lok -race`).
-- [ ] Integration tests pass when `LOK_PATH` is set.
+- [ ] `make test-integration` passes when `LOK_PATH` is set (no `-race`).
 - [ ] `lok` package coverage ≥ 90%.
-- [ ] `internal/lokc` coverage ≥ 90% (excluding trivial wrappers).
+- [ ] `internal/lokc` coverage ≥ 90% (excluding trivial cgo wrappers).
 - [ ] No new lint errors (`go vet`, `gofmt`).
 - [ ] Public API matches design spec.
 - [ ] Documentation (godoc) added for all new exported symbols.
-- [ ] Examples in `cmd/` can be built (Phase 12) using new APIs.
+- [ ] `lok/real_backend.go` remains free of `import "C"`.
 
 ## Notes
 
@@ -1257,11 +1111,19 @@ Expected: Clean commit with all Phase 10 files.
   `uint64` to match LOK's `unsigned long long`.
 - `PaintWindow*` methods follow the same pointer-safety contract as
   `PaintTileRaw`: buffer is pinned only for the synchronous C call.
+  `internal/lokc/windows.go` validates `len(buf) == 4*pxW*pxH` before
+  invoking the shim.
 - JSON returned by `GetCommandValues` is not parsed by `lok`; callers
-  unmarshal into their own types as needed.
+  unmarshal into their own types as needed. The two convenience helpers
+  (`IsCommandEnabled`, `GetFontNames`) parse only the top-level shape
+  and treat absent fields as "disabled" / "empty list" — they intentionally
+  do not surface "field missing" as an error.
 - All new methods on `Document` use `guard()` to acquire the office mutex
   and check both `d.closed` and `d.office.closed`.
-- `ResetWindow` and `GetFontSubset` are not available in LOK 24.8 and
-  return `ErrUnsupported`.
+- `ResetWindow` / `GetFontSubset` — neither vtable slot exists in LOK
+  24.8; no Go method ships in this phase. Revisit when LO adds them.
 - `CompleteFunction` is a no-op for non-Calc documents (LOK silently
   ignores it).
+- All cgo lives strictly inside `internal/lokc`; the `lok` package
+  contains no `import "C"`. This keeps `lok` testable without cgo where
+  possible and matches the layering of Phases 3–9.
