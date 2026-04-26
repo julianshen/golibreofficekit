@@ -18,14 +18,19 @@ static int loke_doc_paste(LibreOfficeKitDocument *d, const char *mime,
     return d->pClass->paste(d, mime, data, (size_t)size) ? 1 : 0;
 }
 
-static void loke_doc_select_part(LibreOfficeKitDocument *d, int part, int sel) {
-    if (d == NULL || d->pClass == NULL || d->pClass->selectPart == NULL) return;
+// LOK's selectPart / moveSelectedParts are void; the shim returns 1 on
+// success and 0 if the vtable slot is missing so the Go layer can
+// surface ErrUnsupported instead of silently no-opping on old LO.
+static int loke_doc_select_part(LibreOfficeKitDocument *d, int part, int sel) {
+    if (d == NULL || d->pClass == NULL || d->pClass->selectPart == NULL) return 0;
     d->pClass->selectPart(d, part, sel);
+    return 1;
 }
 
-static void loke_doc_move_selected_parts(LibreOfficeKitDocument *d, int pos, int dup) {
-    if (d == NULL || d->pClass == NULL || d->pClass->moveSelectedParts == NULL) return;
+static int loke_doc_move_selected_parts(LibreOfficeKitDocument *d, int pos, int dup) {
+    if (d == NULL || d->pClass == NULL || d->pClass->moveSelectedParts == NULL) return 0;
     d->pClass->moveSelectedParts(d, pos, (bool)dup);
+    return 1;
 }
 
 static unsigned char* loke_doc_render_font(LibreOfficeKitDocument *d, const char *font_name,
@@ -74,8 +79,9 @@ func DocumentPaste(d DocumentHandle, mimeType string, data []byte) error {
 	return nil
 }
 
-// DocumentSelectPart calls pClass->selectPart. Returns ErrNilDocument
-// for the zero handle; otherwise no error channel (LOK returns void).
+// DocumentSelectPart calls pClass->selectPart. Returns ErrUnsupported
+// when the vtable slot is missing so callers on older LO builds
+// observe the no-op rather than silently moving on.
 func DocumentSelectPart(d DocumentHandle, part int, selected bool) error {
 	if !d.IsValid() {
 		return ErrNilDocument
@@ -84,11 +90,14 @@ func DocumentSelectPart(d DocumentHandle, part int, selected bool) error {
 	if selected {
 		sel = 1
 	}
-	C.loke_doc_select_part(d.p, C.int(part), sel)
+	if rc := C.loke_doc_select_part(d.p, C.int(part), sel); rc == 0 {
+		return ErrUnsupported
+	}
 	return nil
 }
 
-// DocumentMoveSelectedParts calls pClass->moveSelectedParts.
+// DocumentMoveSelectedParts calls pClass->moveSelectedParts. Returns
+// ErrUnsupported when the vtable slot is missing.
 func DocumentMoveSelectedParts(d DocumentHandle, position int, duplicate bool) error {
 	if !d.IsValid() {
 		return ErrNilDocument
@@ -97,7 +106,9 @@ func DocumentMoveSelectedParts(d DocumentHandle, position int, duplicate bool) e
 	if duplicate {
 		dup = 1
 	}
-	C.loke_doc_move_selected_parts(d.p, C.int(position), dup)
+	if rc := C.loke_doc_move_selected_parts(d.p, C.int(position), dup); rc == 0 {
+		return ErrUnsupported
+	}
 	return nil
 }
 

@@ -23,14 +23,14 @@ func TestDocumentPaste_NilSafe(t *testing.T) {
 }
 
 func TestDocumentSelectPart_NilSafe(t *testing.T) {
-	// selectPart returns void in LOK, so the Go wrapper has no error
-	// channel except ErrNilDocument for the zero handle. nil pClass
-	// is a silent no-op (matches LOK's void-return contract).
+	// LOK's selectPart returns void. The shim still distinguishes
+	// "vtable slot missing" from "operation succeeded" so callers on
+	// old LO builds aren't fooled by a silent no-op.
 	if err := DocumentSelectPart(DocumentHandle{}, 0, true); err != ErrNilDocument {
 		t.Errorf("zero handle: err=%v, want ErrNilDocument", err)
 	}
-	if err := DocumentSelectPart(newFakeDoc(t), 0, true); err != nil {
-		t.Errorf("nil pClass: err=%v, want nil (void return)", err)
+	if err := DocumentSelectPart(newFakeDoc(t), 0, true); err != ErrUnsupported {
+		t.Errorf("nil pClass: err=%v, want ErrUnsupported", err)
 	}
 }
 
@@ -38,8 +38,8 @@ func TestDocumentMoveSelectedParts_NilSafe(t *testing.T) {
 	if err := DocumentMoveSelectedParts(DocumentHandle{}, 0, false); err != ErrNilDocument {
 		t.Errorf("zero handle: err=%v, want ErrNilDocument", err)
 	}
-	if err := DocumentMoveSelectedParts(newFakeDoc(t), 1, true); err != nil {
-		t.Errorf("nil pClass: err=%v, want nil (void return)", err)
+	if err := DocumentMoveSelectedParts(newFakeDoc(t), 1, true); err != ErrUnsupported {
+		t.Errorf("nil pClass: err=%v, want ErrUnsupported", err)
 	}
 }
 
