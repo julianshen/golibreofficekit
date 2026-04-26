@@ -94,7 +94,7 @@ func (d *Document) IsCommandEnabled(cmd string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	var m map[string]interface{}
+	var m map[string]any
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return false, err
 	}
