@@ -110,8 +110,19 @@ func TestSignDocument_BackendError(t *testing.T) {
 	withFakeBackend(t, fb)
 	o, _ := New("/install")
 	defer o.Close()
-	if err := o.SignDocument("url", []byte("c"), nil); !errors.Is(err, ErrSignFailed) {
+	if err := o.SignDocument("url", []byte("c"), []byte("k")); !errors.Is(err, ErrSignFailed) {
 		t.Errorf("want ErrSignFailed, got %v", err)
+	}
+}
+
+func TestSignDocument_EmptyKey(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	err := o.SignDocument("url", []byte("c"), nil)
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) || lokErr.Op != "SignDocument" {
+		t.Errorf("want *LOKError{Op:SignDocument}, got %v", err)
 	}
 }
 
@@ -146,16 +157,36 @@ func TestSignatureState_BackendError(t *testing.T) {
 
 func TestSignatureState_String(t *testing.T) {
 	cases := map[SignatureState]string{
-		SignatureNotSigned:    "NotSigned",
-		SignatureOK:           "OK",
-		SignatureNotValidated: "NotValidated",
-		SignatureInvalid:      "Invalid",
 		SignatureUnknown:      "Unknown",
+		SignatureOK:           "OK",
+		SignatureBroken:       "Broken",
+		SignatureInvalid:      "Invalid",
+		SignatureNotValidated: "NotValidated",
+		SignaturePartialOK:    "PartialOK",
+		SignatureNoSignatures: "NoSignatures",
 		SignatureState(99):    "SignatureState(99)",
 	}
 	for s, want := range cases {
 		if got := s.String(); got != want {
 			t.Errorf("SignatureState(%d).String()=%q, want %q", s, got, want)
+		}
+	}
+}
+
+func TestSignatureState_Valid(t *testing.T) {
+	cases := []struct {
+		s    SignatureState
+		want bool
+	}{
+		{SignatureUnknown, true},
+		{SignatureOK, true},
+		{SignatureNoSignatures, true},
+		{SignatureState(7), false},  // one past the LO enum upper bound
+		{SignatureState(-1), false}, // never produced by LOK
+	}
+	for _, tc := range cases {
+		if got := tc.s.Valid(); got != tc.want {
+			t.Errorf("SignatureState(%d).Valid()=%v, want %v", tc.s, got, tc.want)
 		}
 	}
 }
@@ -198,8 +229,18 @@ func TestInsertCertificate_EmptyCert(t *testing.T) {
 func TestInsertCertificate_BackendError(t *testing.T) {
 	fb := &fakeBackend{insertCertErr: ErrSignFailed}
 	_, doc := loadFakeDoc(t, fb)
-	if err := doc.InsertCertificate([]byte("c"), nil); !errors.Is(err, ErrSignFailed) {
+	if err := doc.InsertCertificate([]byte("c"), []byte("k")); !errors.Is(err, ErrSignFailed) {
 		t.Errorf("want ErrSignFailed, got %v", err)
+	}
+}
+
+func TestInsertCertificate_EmptyKey(t *testing.T) {
+	fb := &fakeBackend{}
+	_, doc := loadFakeDoc(t, fb)
+	err := doc.InsertCertificate([]byte("c"), nil)
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) || lokErr.Op != "InsertCertificate" {
+		t.Errorf("want *LOKError{Op:InsertCertificate}, got %v", err)
 	}
 }
 

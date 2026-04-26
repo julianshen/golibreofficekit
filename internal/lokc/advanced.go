@@ -33,8 +33,9 @@ static int loke_doc_add_certificate(LibreOfficeKitDocument *d,
 }
 
 // loke_doc_get_signature_state returns the LOK state value on success,
-// or -1 when the vtable slot is missing. LOK's own values are >= 0
-// (NEITHER=0, OK=1, etc.), so -1 is unambiguous.
+// or -1 when the vtable slot is missing. LO's SignatureState enum
+// (svl/sigstruct.hxx) is non-negative (UNKNOWN=0..NOSIGNATURES=6 at
+// time of writing), so -1 is unambiguous.
 static int loke_doc_get_signature_state(LibreOfficeKitDocument *d) {
     if (d == NULL || d->pClass == NULL || d->pClass->getSignatureState == NULL) return -1;
     return d->pClass->getSignatureState(d);
