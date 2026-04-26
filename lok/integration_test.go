@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -552,6 +553,62 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 		t.Logf("Phase 10: no EventTypeWindow within deadline; skipping window-event smoke")
 	}
 
+	// --- Phase 11: filter types ---
+	if ft, err := o.FilterTypes(); err != nil {
+		t.Errorf("Phase 11: FilterTypes: %v", err)
+	} else if ft == "" {
+		t.Errorf("Phase 11: FilterTypes returned empty string")
+	} else {
+		t.Logf("Phase 11: FilterTypes length: %d bytes", len(ft))
+	}
+
+	// --- Phase 11: signature state ---
+	if state, err := doc.SignatureState(); err != nil && !errors.Is(err, ErrUnsupported) {
+		t.Errorf("Phase 11: SignatureState: %v", err)
+	} else if err == nil {
+		t.Logf("Phase 11: SignatureState: %s", state)
+	}
+
+	// --- Phase 11: macro execution ---
+	// Most LO installs don't ship user macros; the call should either
+	// succeed or return a tolerated error (ErrMacroFailed/ErrUnsupported).
+	if err := o.RunMacro("macro:///Standard.Module1.Main()"); err != nil {
+		if !errors.Is(err, ErrMacroFailed) && !errors.Is(err, ErrUnsupported) {
+			t.Errorf("Phase 11: RunMacro: unexpected error %v", err)
+		} else {
+			t.Logf("Phase 11: RunMacro returned tolerated error: %v", err)
+		}
+	}
+
+	// --- Phase 11: SignDocument (gated by LOK_TEST_CERTS) ---
+	if certEnv := os.Getenv("LOK_TEST_CERTS"); certEnv != "" {
+		parts := strings.SplitN(certEnv, ",", 2)
+		if len(parts) == 2 {
+			certPEM, certErr := os.ReadFile(parts[0])
+			keyPEM, keyErr := os.ReadFile(parts[1])
+			if certErr != nil || keyErr != nil {
+				t.Logf("Phase 11: cannot read LOK_TEST_CERTS files: certErr=%v keyErr=%v", certErr, keyErr)
+			} else {
+				signTarget := filepath.Join(t.TempDir(), "sign-target.odt")
+				if err := doc.SaveAs(signTarget, "odt", ""); err != nil {
+					t.Errorf("Phase 11: SaveAs for SignDocument: %v", err)
+				} else {
+					fileURL := "file://" + signTarget
+					if err := o.SignDocument(fileURL, certPEM, keyPEM); err != nil &&
+						!errors.Is(err, ErrSignFailed) && !errors.Is(err, ErrUnsupported) {
+						t.Errorf("Phase 11: SignDocument: unexpected error %v", err)
+					} else {
+						t.Logf("Phase 11: SignDocument returned: %v", err)
+					}
+				}
+			}
+		} else {
+			t.Logf("Phase 11: LOK_TEST_CERTS malformed (want cert.pem,key.pem): %q", certEnv)
+		}
+	} else {
+		t.Logf("Phase 11: LOK_TEST_CERTS not set; SignDocument smoke skipped")
+	}
+
 	// LoadFromReader deliberately comes last. Loading a second
 	// document into the same office before a view dance on the first
 	// doc puts LO's layout engine in a state where the subsequent
@@ -574,19 +631,18 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	}
 }
 
-func parseWindowIDFromPayload(payload string) uint32 {
+func parseWindowIDFromPayload(payload []byte) uint32 {
 	var m struct {
 		ID any `json:"id"`
 	}
-	if err := json.Unmarshal([]byte(payload), &m); err != nil {
+	if err := json.Unmarshal(payload, &m); err != nil {
 		return 0
 	}
 	switch v := m.ID.(type) {
 	case float64:
 		return uint32(v)
 	case string:
-		var id uint64
-		if _, err := fmt.Sscanf(v, "%d", &id); err == nil {
+		if id, err := strconv.ParseUint(v, 10, 32); err == nil {
 			return uint32(id)
 		}
 	}
