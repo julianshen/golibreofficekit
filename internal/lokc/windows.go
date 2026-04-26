@@ -14,6 +14,17 @@ import (
 	"unsafe"
 )
 
+// ErrBufferSizeMismatch is returned by paint wrappers when the supplied
+// buffer length is not exactly 4*pxW*pxH (premultiplied BGRA).
+var ErrBufferSizeMismatch = errors.New("lokc: buffer size mismatch")
+
+func checkBGRABuf(buf []byte, pxW, pxH int) error {
+	if len(buf) != 4*pxW*pxH {
+		return ErrBufferSizeMismatch
+	}
+	return nil
+}
+
 // DocumentPostWindowKeyEvent posts a key event to a window.
 func DocumentPostWindowKeyEvent(d DocumentHandle, windowID uint32, typ, charCode, keyCode int) error {
 	if !d.IsValid() {
@@ -83,8 +94,8 @@ func DocumentPaintWindow(d DocumentHandle, windowID uint32, buf []byte, x, y, px
 	if !d.IsValid() {
 		return ErrNilDocument
 	}
-	if len(buf) != 4*pxW*pxH {
-		return errors.New("lokc: buffer size mismatch")
+	if err := checkBGRABuf(buf, pxW, pxH); err != nil {
+		return err
 	}
 	ok := C.loke_paint_window(unsafe.Pointer(d.p), C.uint32_t(windowID), unsafe.Pointer(&buf[0]), C.int(x), C.int(y), C.int(pxW), C.int(pxH))
 	if ok == 0 {
@@ -98,8 +109,8 @@ func DocumentPaintWindowDPI(d DocumentHandle, windowID uint32, buf []byte, x, y,
 	if !d.IsValid() {
 		return ErrNilDocument
 	}
-	if len(buf) != 4*pxW*pxH {
-		return errors.New("lokc: buffer size mismatch")
+	if err := checkBGRABuf(buf, pxW, pxH); err != nil {
+		return err
 	}
 	ok := C.loke_paint_window_dpi(unsafe.Pointer(d.p), C.uint32_t(windowID), unsafe.Pointer(&buf[0]), C.int(x), C.int(y), C.int(pxW), C.int(pxH), C.double(dpiScale))
 	if ok == 0 {
@@ -113,8 +124,8 @@ func DocumentPaintWindowForView(d DocumentHandle, windowID uint32, view int, buf
 	if !d.IsValid() {
 		return ErrNilDocument
 	}
-	if len(buf) != 4*pxW*pxH {
-		return errors.New("lokc: buffer size mismatch")
+	if err := checkBGRABuf(buf, pxW, pxH); err != nil {
+		return err
 	}
 	ok := C.loke_paint_window_for_view(unsafe.Pointer(d.p), C.uint32_t(windowID), C.int(view), unsafe.Pointer(&buf[0]), C.int(x), C.int(y), C.int(pxW), C.int(pxH), C.double(dpiScale))
 	if ok == 0 {

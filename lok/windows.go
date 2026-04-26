@@ -2,6 +2,8 @@
 
 package lok
 
+import "math"
+
 // PostWindowKeyEvent posts a key event to a specific window.
 func (d *Document) PostWindowKeyEvent(windowID uint32, typ KeyEventType, charCode, keyCode int) error {
 	unlock, err := d.guard()
@@ -50,13 +52,13 @@ func (d *Document) PostWindowExtTextInputEvent(windowID uint32, typ int, text st
 
 // ResizeWindow changes the size of a window.
 func (d *Document) ResizeWindow(windowID uint32, w, h int) error {
+	if w <= 0 || h <= 0 || w > math.MaxInt32 || h > math.MaxInt32 {
+		return ErrInvalidOption
+	}
 	unlock, err := d.guard()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	if w <= 0 || h <= 0 {
-		return ErrInvalidOption
-	}
 	return d.office.be.ResizeWindow(d.h, windowID, w, h)
 }

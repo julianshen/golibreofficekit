@@ -11,6 +11,9 @@ func (d *Document) PaintWindow(windowID uint32, buf []byte, x, y, pxW, pxH int) 
 		return err
 	}
 	defer unlock()
+	if err := checkPaintBuf("PaintWindow", buf, pxW, pxH); err != nil {
+		return err
+	}
 	return d.office.be.PaintWindow(d.h, windowID, buf, x, y, pxW, pxH)
 }
 
@@ -21,6 +24,9 @@ func (d *Document) PaintWindowDPI(windowID uint32, buf []byte, x, y, pxW, pxH in
 		return err
 	}
 	defer unlock()
+	if err := checkPaintBuf("PaintWindowDPI", buf, pxW, pxH); err != nil {
+		return err
+	}
 	return d.office.be.PaintWindowDPI(d.h, windowID, buf, x, y, pxW, pxH, dpiScale)
 }
 
@@ -31,5 +37,8 @@ func (d *Document) PaintWindowForView(windowID uint32, view ViewID, buf []byte, 
 		return err
 	}
 	defer unlock()
+	if err := checkPaintBuf("PaintWindowForView", buf, pxW, pxH); err != nil {
+		return err
+	}
 	return d.office.be.PaintWindowForView(d.h, windowID, int(view), buf, x, y, pxW, pxH, dpiScale)
 }

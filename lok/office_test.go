@@ -135,16 +135,14 @@ type fakeBackend struct {
 	registerDocCallbackErr     error
 
 	// Phase 10: command/window tracking.
-	lastCommand           string
-	lastCommandResult     string
-	getCommandValuesErr  error
-	completeFunctionErr  error
-	lastWindowID         uint32
-	lastWindowX, lastWindowY int
-	lastWindowBuf        []byte
-	sendDialogEventErr   error
+	lastCommand                string
+	lastCommandResult          string
+	getCommandValuesErr        error
+	completeFunctionErr        error
+	lastWindowID               uint32
+	sendDialogEventErr         error
 	sendContentControlEventErr error
-	sendFormFieldEventErr error
+	sendFormFieldEventErr      error
 }
 
 const fakeViewIDBase = 1000
@@ -742,20 +740,17 @@ func (f *fakeBackend) ResizeWindow(_ documentHandle, windowID uint32, w, h int) 
 	return nil
 }
 
-func (f *fakeBackend) PaintWindow(_ documentHandle, windowID uint32, buf []byte, x, y, pxW, pxH int) error {
+func (f *fakeBackend) PaintWindow(_ documentHandle, windowID uint32, _ []byte, _, _, _, _ int) error {
 	f.lastWindowID = windowID
-	f.lastWindowBuf = buf
 	return nil
 }
 
-func (f *fakeBackend) PaintWindowDPI(_ documentHandle, windowID uint32, buf []byte, x, y, pxW, pxH int, dpiScale float64) error {
+func (f *fakeBackend) PaintWindowDPI(_ documentHandle, windowID uint32, _ []byte, _, _, _, _ int, _ float64) error {
 	f.lastWindowID = windowID
-	f.lastWindowBuf = buf
 	return nil
 }
 
-func (f *fakeBackend) PaintWindowForView(_ documentHandle, windowID uint32, view int, buf []byte, x, y, pxW, pxH int, dpiScale float64) error {
+func (f *fakeBackend) PaintWindowForView(_ documentHandle, windowID uint32, _ int, _ []byte, _, _, _, _ int, _ float64) error {
 	f.lastWindowID = windowID
-	f.lastWindowBuf = buf
 	return nil
 }

@@ -523,7 +523,7 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 
 	// --- Phase 10: window event smoke ---
 	gotID := make(chan uint32, 1)
-	unsub, _ := doc.AddListener(func(e Event) {
+	unsub, err := doc.AddListener(func(e Event) {
 		if e.Type == EventTypeWindow {
 			select {
 			case gotID <- parseWindowIDFromPayload(e.Payload):
@@ -531,6 +531,9 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 			}
 		}
 	})
+	if err != nil {
+		t.Fatalf("Phase 10: AddListener: %v", err)
+	}
 	defer unsub()
 
 	_ = doc.PostUnoCommand(".uno:DesignerDialog", "", false)
@@ -568,10 +571,19 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 
 func parseWindowIDFromPayload(payload string) uint32 {
 	var m struct {
-		ID uint32 `json:"id"`
+		ID any `json:"id"`
 	}
 	if err := json.Unmarshal([]byte(payload), &m); err != nil {
 		return 0
 	}
-	return m.ID
+	switch v := m.ID.(type) {
+	case float64:
+		return uint32(v)
+	case string:
+		var id uint64
+		if _, err := fmt.Sscanf(v, "%d", &id); err == nil {
+			return uint32(id)
+		}
+	}
+	return 0
 }

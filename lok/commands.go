@@ -51,12 +51,13 @@ func (d *Document) InsertTable(rows, cols int) error {
 // expected payload formats.
 //
 // Common commands:
-//   ".uno:Save"                     — always enabled when document is modifiable
-//   ".uno:Undo" / ".uno:Redo"       — enabled/disabled state
-//   ".uno:Bold" / ".uno:Italic"     — checked state
-//   ".uno:FontName"                 — list of available fonts
-//   ".uno:StyleApply"               — list of styles
-//   ".uno:CharFontName"             — current font
+//
+//	".uno:Save"                     — always enabled when document is modifiable
+//	".uno:Undo" / ".uno:Redo"       — enabled/disabled state
+//	".uno:Bold" / ".uno:Italic"     — checked state
+//	".uno:FontName"                 — list of available fonts
+//	".uno:StyleApply"               — list of styles
+//	".uno:CharFontName"             — current font
 //
 // Returns ErrUnsupported if LOK does not implement getCommandValues for this
 // build. Returns a non-nil error for invalid commands or closed documents.
@@ -86,10 +87,8 @@ func (d *Document) CompleteFunction(name string) error {
 }
 
 // IsCommandEnabled returns whether command is currently enabled.
-// Returns an error if the command JSON cannot be parsed or when the
-// "enabled" or "state" fields are present but of an invalid type/value.
-// When those fields are missing (absent), they are treated as disabled
-// and the function returns (false, nil).
+// Returns an error only if the command JSON cannot be parsed. If neither
+// "enabled" nor "state" is present as a boolean, returns (false, nil).
 func (d *Document) IsCommandEnabled(cmd string) (bool, error) {
 	raw, err := d.GetCommandValues(cmd)
 	if err != nil {
@@ -111,21 +110,25 @@ func (d *Document) IsCommandEnabled(cmd string) (bool, error) {
 // GetFontNames returns the list of available font names.
 // Returns an error if the command JSON cannot be parsed. When the "value"
 // field is absent or not a list, returns an empty slice (not nil).
+// Non-string entries in the list are skipped.
 func (d *Document) GetFontNames() ([]string, error) {
 	raw, err := d.GetCommandValues(".uno:FontName")
 	if err != nil {
 		return nil, err
 	}
-	var m map[string]interface{}
+	var m map[string]any
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return nil, err
 	}
-	if v, ok := m["value"].([]interface{}); ok {
-		names := make([]string, len(v))
-		for i, x := range v {
-			names[i] = fmt.Sprint(x)
-		}
-		return names, nil
+	v, ok := m["value"].([]any)
+	if !ok {
+		return []string{}, nil
 	}
-	return []string{}, nil
+	names := make([]string, 0, len(v))
+	for _, x := range v {
+		if s, ok := x.(string); ok {
+			names = append(names, s)
+		}
+	}
+	return names, nil
 }
