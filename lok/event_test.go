@@ -24,6 +24,7 @@ func TestEventType_String(t *testing.T) {
 		{EventTypeSetPart, "EventTypeSetPart"},
 		{EventTypeError, "EventTypeError"},
 		{EventTypeWindow, "EventTypeWindow"},
+		{EventTypeSignatureStatus, "EventTypeSignatureStatus"},
 		{EventType(999), "EventType(999)"},
 	}
 	for _, tc := range cases {

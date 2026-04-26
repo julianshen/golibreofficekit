@@ -26,6 +26,7 @@ const (
 	EventTypeMousePointer            EventType = 18 // LOK_CALLBACK_MOUSE_POINTER
 	EventTypeError                   EventType = 22 // LOK_CALLBACK_ERROR
 	EventTypeWindow                  EventType = 36 // LOK_CALLBACK_WINDOW
+	EventTypeSignatureStatus         EventType = 40 // LOK_CALLBACK_SIGNATURE_STATUS
 )
 
 func (t EventType) String() string {
@@ -60,6 +61,8 @@ func (t EventType) String() string {
 		return "EventTypeError"
 	case EventTypeWindow:
 		return "EventTypeWindow"
+	case EventTypeSignatureStatus:
+		return "EventTypeSignatureStatus"
 	default:
 		return fmt.Sprintf("EventType(%d)", int(t))
 	}
