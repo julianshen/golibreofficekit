@@ -82,10 +82,9 @@ fonts; `.uno:StyleApply` → style list; `.uno:CharFontName` → current font).
 func (d *Document) GetCommandValues(command string) (json.RawMessage, error)
 
 // CompleteFunction attempts to complete a function (formula) in a spreadsheet.
-// part is the part index (sheet), name is the function name. Returns an error
-// if the document is not a spreadsheet or the function cannot be completed.
+// name is the function name. Returns an error if the function cannot be completed.
 // This is a no-op for non-Calc documents.
-func (d *Document) CompleteFunction(part int, name string) error
+func (d *Document) CompleteFunction(name string) error
 ```
 
 Typed helpers (convenience):

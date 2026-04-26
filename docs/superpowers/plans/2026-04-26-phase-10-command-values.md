@@ -52,7 +52,7 @@ Append to `backend` interface in `lok/backend.go`:
 ```go
 // Command & window operations (Phase 10).
 GetCommandValues(d documentHandle, command string) (string, error)
-CompleteFunction(d documentHandle, part int, name string) error
+CompleteFunction(d documentHandle, name string) error
 SendDialogEvent(d documentHandle, windowID uint64, argsJSON string) error
 SendContentControlEvent(d documentHandle, argsJSON string) error
 SendFormFieldEvent(d documentHandle, argsJSON string) error
@@ -351,12 +351,15 @@ func (realBackend) GetCommandValues(d documentHandle, command string) (string, e
     return C.GoStringN(out, C.int(outLen)), nil
 }
 
-func (realBackend) CompleteFunction(d documentHandle, part int, name string) error {
-    ok := C.loke_complete_function(mustDoc(d).d, C.int(part), C.CString(name))
-    if ok == 0 {
-        // completeFunction is void; 0 means vtable slot missing.
-        return ErrUnsupported
-    }
+func (realBackend) CompleteFunction(d documentHandle, name string) error {
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	ok := C.loke_complete_function(mustDoc(d).d, cName)
+	if ok == 0 {
+		return ErrUnsupported
+	}
+	return nil
+}
     return nil
 }
 
