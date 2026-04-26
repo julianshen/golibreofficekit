@@ -72,8 +72,8 @@ func TestPostWindowGestureEvent_Int32Overflow(t *testing.T) {
 	_, doc := loadFakeDoc(t, fb)
 
 	cases := []struct {
-		name          string
-		x, y, offset  int64
+		name         string
+		x, y, offset int64
 	}{
 		{"x overflow", math.MaxInt32 + 1, 0, 0},
 		{"y overflow", 0, math.MaxInt32 + 1, 0},
