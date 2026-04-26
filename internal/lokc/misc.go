@@ -65,9 +65,10 @@ func OfficeGetFilterTypes(h OfficeHandle) (string, error) {
 // vtable slot itself is missing on this LO build.
 var ErrPasteFailed = errors.New("lokc: paste returned false")
 
-// DocumentPaste calls pClass->paste. Returns ErrUnsupported when the
-// vtable slot is missing and ErrPasteFailed when LO accepted the call
-// but rejected the payload (e.g. unsupported MIME type).
+// DocumentPaste calls pClass->paste. The C shim distinguishes
+// "vtable slot missing" (-1 → ErrUnsupported) from "LO rejected
+// the payload" (0 → ErrPasteFailed); LOK's bool return alone could
+// not, but the shim widens the channel.
 func DocumentPaste(d DocumentHandle, mimeType string, data []byte) error {
 	if !d.IsValid() {
 		return ErrNilDocument

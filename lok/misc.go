@@ -22,8 +22,11 @@ func (d *Document) PasteData(mimeType string, data []byte) error {
 	return d.office.be.DocumentPaste(d.h, mimeType, data)
 }
 
-// SelectPart selects or deselects a part (Calc sheet, Impress slide,
-// Draw page). Returns ErrClosed on a closed document.
+// SelectPart adjusts the selection state of a part (Calc sheet,
+// Impress slide, Draw page). The selected flag maps to LOK's nSelect
+// argument; see LibreOfficeKit.h for the per-doc-type interpretation
+// (Impress treats nSelect as a tri-state where 2 means toggle).
+// Returns ErrClosed on a closed document.
 func (d *Document) SelectPart(part int, selected bool) error {
 	unlock, err := d.guard()
 	if err != nil {
@@ -45,8 +48,11 @@ func (d *Document) MoveSelectedParts(position int, duplicate bool) error {
 	return d.office.be.DocumentMoveSelectedParts(d.h, position, duplicate)
 }
 
-// RenderFont renders char in fontName as a premultiplied BGRA bitmap
-// (same format as PaintTileRaw). The returned slice has length 4*w*h.
+// RenderFont renders char in fontName as a 32-bit-per-pixel bitmap
+// matching LO's tile-rendering format on this platform (premultiplied
+// BGRA on little-endian targets, the same shape PaintTileRaw produces;
+// callers targeting big-endian builds should consult Document.TileMode
+// before assuming a byte order). The returned slice has length 4*w*h.
 // If fontName is empty the LO default font is used.
 // Returns ErrClosed on a closed document and ErrUnsupported when the
 // LO build does not expose renderFont.
