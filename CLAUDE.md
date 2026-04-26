@@ -27,6 +27,22 @@ relax them without an explicit instruction.
    - Refactor with the tests green.
    Use `superpowers:test-driven-development`. Do not batch "I'll add tests
    later" — that is not TDD.
+   - **The plan structure must reflect TDD.** A task labelled "implement
+     methods A, B, C" followed by a separate task "add tests for A, B, C"
+     bakes the anti-pattern in: the agent will follow the plan and ship
+     untested code first. If you see this shape, restructure the plan so
+     each method is one task that owns both its failing test and its
+     implementation.
+   - **Commits must reflect TDD too.** A commit titled "feat: implement
+     X" with body "tests in next commit" is the same anti-pattern at
+     the git layer. Each commit lands the test for the behaviour it
+     introduces. If a phase needs multiple commits, they are
+     `test+impl(method-A)`, `test+impl(method-B)`, …, not all-impl
+     followed by all-tests. (Phase 10 violated this and the bugs that
+     a red test would have caught — int32 truncation in
+     `PostWindowGestureEvent`, lost `argsJSON` forwarding,
+     `mapLokErr` skipped for the whole batch — only surfaced in PR
+     review. See `docs/retros/2026-04-26-phase-10.md`.)
 4. **Brainstorm before building.** For any new feature or API surface, invoke
    `superpowers:brainstorming` before EnterPlanMode.
 5. **Verify before claiming done.** Use
