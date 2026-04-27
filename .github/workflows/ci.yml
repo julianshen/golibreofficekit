@@ -54,11 +54,10 @@ jobs:
     name: integration smoke (LOK_PATH)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    # Marked non-blocking until we observe a few green runs in a row;
-    # promote to required once it is stable. The point is to surface
-    # issues like Phase 10's payload-shape drift early, not to gate
-    # green PRs on apt-get and LO startup quirks.
-    continue-on-error: true
+    # Required check (no continue-on-error) — promoted after PR #27
+    # (PPA pin) and PR #28 (ErrNoValue split) ran green back-to-back
+    # against real LO 26.x. Regressions in the LOK call surface
+    # (vtable drift, payload-shape changes) now block PR merge.
     steps:
       - uses: actions/checkout@v4
 
