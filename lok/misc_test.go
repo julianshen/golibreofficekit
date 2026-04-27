@@ -89,6 +89,14 @@ func TestSelectPart_Closed(t *testing.T) {
 	}
 }
 
+func TestSelectPart_BackendError(t *testing.T) {
+	fb := &fakeBackend{selectPartErr: ErrUnsupported}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.SelectPart(0, true); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("want ErrUnsupported, got %v", err)
+	}
+}
+
 func TestMoveSelectedParts(t *testing.T) {
 	fb := &fakeBackend{}
 	_, doc := loadFakeDoc(t, fb)
@@ -106,6 +114,14 @@ func TestMoveSelectedParts_Closed(t *testing.T) {
 	doc.Close()
 	if err := doc.MoveSelectedParts(0, false); !errors.Is(err, ErrClosed) {
 		t.Errorf("want ErrClosed, got %v", err)
+	}
+}
+
+func TestMoveSelectedParts_BackendError(t *testing.T) {
+	fb := &fakeBackend{moveSelectedPartsErr: ErrUnsupported}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.MoveSelectedParts(0, false); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("want ErrUnsupported, got %v", err)
 	}
 }
 

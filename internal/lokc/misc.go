@@ -13,9 +13,9 @@ static char* loke_office_get_filter_types(LibreOfficeKit *p) {
 }
 
 static int loke_doc_paste(LibreOfficeKitDocument *d, const char *mime,
-                          const char *data, int size) {
+                          const char *data, size_t size) {
     if (d == NULL || d->pClass == NULL || d->pClass->paste == NULL) return -1;
-    return d->pClass->paste(d, mime, data, (size_t)size) ? 1 : 0;
+    return d->pClass->paste(d, mime, data, size) ? 1 : 0;
 }
 
 // LOK's selectPart / moveSelectedParts are void; the shim returns 1 on
@@ -76,10 +76,10 @@ func DocumentPaste(d DocumentHandle, mimeType string, data []byte) error {
 	cMime := C.CString(mimeType)
 	defer C.free(unsafe.Pointer(cMime))
 	var dataPtr *C.char
-	var dataLen C.int
+	var dataLen C.size_t
 	if len(data) > 0 {
 		dataPtr = (*C.char)(unsafe.Pointer(&data[0]))
-		dataLen = C.int(len(data))
+		dataLen = C.size_t(len(data))
 	}
 	rc := C.loke_doc_paste(d.p, cMime, dataPtr, dataLen)
 	switch rc {
