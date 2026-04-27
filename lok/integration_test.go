@@ -349,23 +349,21 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 		t.Errorf("PostUnoCommand .uno:Deselect: %v", err)
 	}
 
-	// Typed helpers: exercise Bold/SelectAll + InsertTable JSON path.
-	if err := doc.SelectAll(); err != nil {
-		t.Errorf("SelectAll: %v", err)
-	}
-	if err := doc.Bold(); err != nil {
-		t.Errorf("Bold: %v", err)
-	}
-	if err := doc.InsertTable(2, 2); err != nil {
-		t.Errorf("InsertTable: %v", err)
-	}
-
 	// --- Phase 9: SelectAll → text-selection callback wait ---
 	//
 	// Phase 8 deferred this branch behind a t.Logf capability gate
 	// because LO 24.8 drops posted input until a callback is
 	// registered. Phase 9 registers the trampoline at Load() so the
 	// gate is gone — the listener fires and we wait on it.
+	//
+	// Runs BEFORE the typed-helper exercises (Bold/InsertTable)
+	// below so SelectAll captures the freshly-loaded fixture text.
+	// LO 26.x narrowed SelectAll's scope when the cursor is inside
+	// a table: after InsertTable(2,2) leaves the cursor inside an
+	// empty cell, SelectAll selects only the table (yielding
+	// "\t\n\t\n") instead of the whole document. Putting the text
+	// assertion before the InsertTable mutation keeps the smoke
+	// honest across LO versions.
 	selFired := make(chan struct{}, 1)
 	cancelSel, err := doc.AddListener(func(e Event) {
 		switch e.Type {
@@ -406,14 +404,8 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	if usedMime == "" {
 		t.Errorf("Phase 9: usedMime should be non-empty")
 	}
-	// Don't hard-fail on the text body. LO 26.x sometimes returns
-	// only the table/separator scaffold (e.g. "\t\n\t\n") on a
-	// SelectAll of a document that hasn't had a layout pass yet —
-	// the call is structurally correct, just empty of fixture text.
-	// What matters for the smoke is that the call didn't error and
-	// returned a usable mime.
 	if !strings.Contains(text, "Hello") {
-		t.Logf("Phase 9: selection text %q does not contain 'Hello' (LO state-dependent)", text)
+		t.Errorf("Phase 9: selection text %q does not contain 'Hello'", text)
 	}
 	kind2, text2, _, err := doc.GetSelectionTypeAndText("text/plain;charset=utf-8")
 	if errors.Is(err, ErrUnsupported) {
@@ -444,6 +436,21 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	}
 	if err := doc.SetBlockedCommandList(0, ""); err != nil {
 		t.Errorf("Phase 9: SetBlockedCommandList: %v", err)
+	}
+
+	// Typed helpers: exercise Bold/SelectAll + InsertTable JSON path.
+	// These mutate the document body (insert a 2x2 table) so they
+	// run AFTER Phase 9's text-content check above; otherwise the
+	// cursor ends up inside the empty table and SelectAll on LO 26.x
+	// scopes to the table instead of the whole document.
+	if err := doc.SelectAll(); err != nil {
+		t.Errorf("SelectAll: %v", err)
+	}
+	if err := doc.Bold(); err != nil {
+		t.Errorf("Bold: %v", err)
+	}
+	if err := doc.InsertTable(2, 2); err != nil {
+		t.Errorf("InsertTable: %v", err)
 	}
 
 	// --- Phase 9: office-level listener smoke ---
