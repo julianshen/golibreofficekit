@@ -119,6 +119,19 @@ func TestGetCommandValues_BackendError(t *testing.T) {
 	}
 }
 
+func TestGetCommandValues_NoValue(t *testing.T) {
+	fb := &fakeBackend{getCommandValuesErr: ErrNoValue}
+	_, doc := loadFakeDoc(t, fb)
+
+	_, err := doc.GetCommandValues(".uno:Save")
+	if !errors.Is(err, ErrNoValue) {
+		t.Errorf("want ErrNoValue, got %v", err)
+	}
+	if errors.Is(err, ErrUnsupported) {
+		t.Errorf("ErrNoValue must not match ErrUnsupported, got %v", err)
+	}
+}
+
 func TestGetCommandValues_Closed(t *testing.T) {
 	fb := &fakeBackend{}
 	_, doc := loadFakeDoc(t, fb)

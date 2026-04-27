@@ -8,9 +8,11 @@
 extern "C" {
 #endif
 
-// Returns 1 on success, 0 on failure (e.g. NULL handle, missing vtable).
-// On success, *out_len is set to the length of the returned string (no null terminator).
-// The caller must free the returned buffer with free().
+// loke_get_command_values returns:
+//   -1 → vtable slot missing / invalid arg
+//    0 → LO accepted the call but returned NULL (no value)
+//    1 → success; *out points at LOK-allocated buffer the caller frees
+// On success, *out_len is the byte length (no null terminator).
 int loke_get_command_values(void* doc, const char* command, char** out, size_t* out_len);
 
 // Returns 1 on success, 0 on failure.

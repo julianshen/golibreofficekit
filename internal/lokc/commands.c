@@ -3,10 +3,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+// loke_get_command_values returns:
+//   -1 → vtable slot is missing (or invalid arg) → Go: ErrUnsupported
+//    0 → LO accepted the call but returned NULL  → Go: ErrNoValue
+//    1 → success; *out points at LOK-allocated buffer the caller frees
 int loke_get_command_values(void* doc, const char* command, char** out, size_t* out_len) {
-    if (!doc || !command || !out || !out_len) return 0;
+    if (!doc || !command || !out || !out_len) return -1;
     LibreOfficeKitDocument* d = (LibreOfficeKitDocument*)doc;
-    if (!d->pClass || !d->pClass->getCommandValues) return 0;
+    if (!d->pClass || !d->pClass->getCommandValues) return -1;
     char* s = d->pClass->getCommandValues(d, command);
     if (!s) return 0;
     *out_len = strlen(s);
