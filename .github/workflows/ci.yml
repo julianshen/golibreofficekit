@@ -62,11 +62,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install LibreOffice + build deps
+      - name: Install LibreOffice (PPA) + build deps
+        # Ubuntu 24.04's default libreoffice is 24.2, whose LOK vtable
+        # is shorter than the one our vendored LibreOfficeKit.h expects.
+        # Calls into late vtable slots (e.g. setViewReadOnly) read past
+        # the end of the runtime struct and SIGSEGV. ppa:libreoffice/ppa
+        # tracks the latest stable (LO 26.x at time of writing); its
+        # vtable layout matches the header. Per-version PPAs like
+        # libreoffice-25-2 do not exist on Launchpad — only ppa and
+        # libreoffice-still are real.
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential \
+            software-properties-common
+          sudo add-apt-repository -y ppa:libreoffice/ppa
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
             libreoffice \
             libreoffice-core \
             libreofficekit-data
