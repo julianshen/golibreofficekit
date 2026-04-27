@@ -49,3 +49,45 @@ jobs:
 
       - name: Coverage gate (runs tests with -race)
         run: make cover-gate
+
+  integration:
+    name: integration smoke (LOK_PATH)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Marked non-blocking until we observe a few green runs in a row;
+    # promote to required once it is stable. The point is to surface
+    # issues like Phase 10's payload-shape drift early, not to gate
+    # green PRs on apt-get and LO startup quirks.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LibreOffice + build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            libreoffice \
+            libreoffice-core \
+            libreofficekit-data
+          test -d /usr/lib/libreoffice/program
+
+      - name: Set up Go 1.23
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          check-latest: true
+          cache: true
+
+      - name: Show versions
+        run: |
+          go version
+          /usr/lib/libreoffice/program/soffice --version || true
+
+      - name: Run integration smoke
+        env:
+          # GODEBUG=asyncpreemptoff=1 is set by the Makefile target;
+          # LOK_PATH selects the LO program/ directory the integration
+          # tests dlopen.
+          LOK_PATH: /usr/lib/libreoffice/program
+        run: make test-integration
