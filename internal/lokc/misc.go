@@ -7,9 +7,16 @@ package lokc
 #include <stdlib.h>
 #include "LibreOfficeKit/LibreOfficeKit.h"
 
-static char* loke_office_get_filter_types(LibreOfficeKit *p) {
-    if (p == NULL || p->pClass == NULL || p->pClass->getFilterTypes == NULL) return NULL;
-    return p->pClass->getFilterTypes(p);
+// loke_office_get_filter_types returns:
+//   -1 → vtable slot missing      → Go: ErrUnsupported
+//    0 → LO returned NULL          → Go: ErrNoValue
+//    1 → success; *out is LOK-allocated, caller frees
+static int loke_office_get_filter_types(LibreOfficeKit *p, char **out) {
+    if (p == NULL || p->pClass == NULL || p->pClass->getFilterTypes == NULL) return -1;
+    char *s = p->pClass->getFilterTypes(p);
+    if (s == NULL) return 0;
+    *out = s;
+    return 1;
 }
 
 static int loke_doc_paste(LibreOfficeKitDocument *d, const char *mime,
@@ -33,10 +40,18 @@ static int loke_doc_move_selected_parts(LibreOfficeKitDocument *d, int pos, int 
     return 1;
 }
 
-static unsigned char* loke_doc_render_font(LibreOfficeKitDocument *d, const char *font_name,
-                                           const char *ch, int *out_w, int *out_h) {
-    if (d == NULL || d->pClass == NULL || d->pClass->renderFont == NULL) return NULL;
-    return d->pClass->renderFont(d, font_name, ch, out_w, out_h);
+// loke_doc_render_font returns:
+//   -1 → vtable slot missing            → Go: ErrUnsupported
+//    0 → LO returned NULL (e.g. unknown font)  → Go: ErrNoValue
+//    1 → success; *out_buf is LOK-allocated, caller frees
+static int loke_doc_render_font(LibreOfficeKitDocument *d, const char *font_name,
+                                const char *ch, int *out_w, int *out_h,
+                                unsigned char **out_buf) {
+    if (d == NULL || d->pClass == NULL || d->pClass->renderFont == NULL) return -1;
+    unsigned char *p = d->pClass->renderFont(d, font_name, ch, out_w, out_h);
+    if (p == NULL) return 0;
+    *out_buf = p;
+    return 1;
 }
 */
 import "C"
@@ -48,15 +63,23 @@ import (
 
 // OfficeGetFilterTypes calls pClass->getFilterTypes and returns the
 // JSON payload as a Go string. The C buffer is freed before return.
+//
+// Returns ErrUnsupported when the LO build does not expose
+// getFilterTypes and ErrNoValue when LO accepted the call but
+// returned NULL.
 func OfficeGetFilterTypes(h OfficeHandle) (string, error) {
 	if !h.IsValid() {
 		return "", ErrNilOffice
 	}
-	s := C.loke_office_get_filter_types(h.p)
-	if s == nil {
+	var out *C.char
+	rc := C.loke_office_get_filter_types(h.p, &out)
+	switch rc {
+	case -1:
 		return "", ErrUnsupported
+	case 0:
+		return "", ErrNoValue
 	}
-	return copyAndFree(s), nil
+	return copyAndFree(out), nil
 }
 
 // ErrPasteFailed is returned by DocumentPaste when LOK's paste returned
@@ -127,6 +150,10 @@ func DocumentMoveSelectedParts(d DocumentHandle, position int, duplicate bool) e
 // DocumentRenderFont calls pClass->renderFont. The returned buffer is
 // premultiplied BGRA of size 4*w*h; copied to Go and the LOK buffer
 // freed before return.
+//
+// Returns ErrUnsupported when the LO build does not expose renderFont
+// and ErrNoValue when LO accepted the call but produced no bitmap
+// (e.g. unknown font name).
 func DocumentRenderFont(d DocumentHandle, fontName, char string) ([]byte, int, int, error) {
 	if !d.IsValid() {
 		return nil, 0, 0, ErrNilDocument
@@ -136,9 +163,13 @@ func DocumentRenderFont(d DocumentHandle, fontName, char string) ([]byte, int, i
 	cChar := C.CString(char)
 	defer C.free(unsafe.Pointer(cChar))
 	var w, h C.int
-	ptr := C.loke_doc_render_font(d.p, cFont, cChar, &w, &h)
-	if ptr == nil {
+	var ptr *C.uchar
+	rc := C.loke_doc_render_font(d.p, cFont, cChar, &w, &h, &ptr)
+	switch rc {
+	case -1:
 		return nil, 0, 0, ErrUnsupported
+	case 0:
+		return nil, 0, 0, ErrNoValue
 	}
 	size := 4 * int(w) * int(h)
 	buf := C.GoBytes(unsafe.Pointer(ptr), C.int(size))

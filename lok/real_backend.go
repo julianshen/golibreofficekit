@@ -237,6 +237,8 @@ func mapLokErr(err error) error {
 		return nil
 	case errors.Is(err, lokc.ErrUnsupported):
 		return ErrUnsupported
+	case errors.Is(err, lokc.ErrNoValue):
+		return ErrNoValue
 	case errors.Is(err, lokc.ErrNilOffice):
 		return &LOKError{Detail: "nil office handle reached backend; programmer error", err: err}
 	case errors.Is(err, lokc.ErrNilDocument):

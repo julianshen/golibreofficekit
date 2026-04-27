@@ -16,6 +16,11 @@ import (
 // DocumentGetCommandValues calls pClass->getCommandValues and returns
 // the JSON payload as a Go string. The wrapper frees the LOK-allocated
 // C buffer before returning; callers do not own any C memory.
+//
+// Returns ErrUnsupported when the LO build does not expose
+// getCommandValues (vtable slot missing) and ErrNoValue when the call
+// succeeded but LO chose not to produce a payload (e.g. ".uno:Save"
+// queried on a freshly-loaded document).
 func DocumentGetCommandValues(d DocumentHandle, command string) (string, error) {
 	if !d.IsValid() {
 		return "", ErrNilDocument
@@ -24,9 +29,12 @@ func DocumentGetCommandValues(d DocumentHandle, command string) (string, error) 
 	var outLen C.size_t
 	cCmd := C.CString(command)
 	defer C.free(unsafe.Pointer(cCmd))
-	ok := C.loke_get_command_values(unsafe.Pointer(d.p), cCmd, &out, &outLen)
-	if ok == 0 {
+	rc := C.loke_get_command_values(unsafe.Pointer(d.p), cCmd, &out, &outLen)
+	switch rc {
+	case -1:
 		return "", ErrUnsupported
+	case 0:
+		return "", ErrNoValue
 	}
 	defer C.free(unsafe.Pointer(out))
 	return C.GoStringN(out, C.int(outLen)), nil

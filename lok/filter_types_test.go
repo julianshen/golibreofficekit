@@ -40,3 +40,17 @@ func TestFilterTypes_BackendError(t *testing.T) {
 		t.Errorf("want ErrUnsupported, got %v", err)
 	}
 }
+
+func TestFilterTypes_NoValue(t *testing.T) {
+	fb := &fakeBackend{filterTypesErr: ErrNoValue}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	_, err := o.FilterTypes()
+	if !errors.Is(err, ErrNoValue) {
+		t.Errorf("want ErrNoValue, got %v", err)
+	}
+	if errors.Is(err, ErrUnsupported) {
+		t.Errorf("ErrNoValue must not match ErrUnsupported")
+	}
+}

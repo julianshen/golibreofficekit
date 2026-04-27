@@ -179,6 +179,22 @@ func TestErrorSentinelsAreDistinct(t *testing.T) {
 	if errors.Is(ErrClosed, ErrAlreadyInitialised) {
 		t.Error("ErrClosed should not match ErrAlreadyInitialised")
 	}
+	if errors.Is(ErrUnsupported, ErrNoValue) {
+		t.Error("ErrUnsupported should not match ErrNoValue")
+	}
+}
+
+// TestMapLokErr_NoValue: the lokc.ErrNoValue sentinel (LO accepted
+// the call but produced no payload) must translate to the public
+// lok.ErrNoValue, distinct from ErrUnsupported (vtable slot missing).
+func TestMapLokErr_NoValue(t *testing.T) {
+	got := mapLokErr(lokc.ErrNoValue)
+	if !errors.Is(got, ErrNoValue) {
+		t.Errorf("mapLokErr(lokc.ErrNoValue)=%v, want lok.ErrNoValue", got)
+	}
+	if errors.Is(got, ErrUnsupported) {
+		t.Errorf("mapLokErr(lokc.ErrNoValue)=%v must not match ErrUnsupported", got)
+	}
 }
 
 // TestRealBackend_ViewForwarding covers every view-method forwarder

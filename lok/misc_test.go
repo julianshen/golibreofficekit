@@ -163,3 +163,15 @@ func TestRenderFont_BackendError(t *testing.T) {
 		t.Errorf("want ErrUnsupported, got %v", err)
 	}
 }
+
+func TestRenderFont_NoValue(t *testing.T) {
+	fb := &fakeBackend{renderFontErr: ErrNoValue}
+	_, doc := loadFakeDoc(t, fb)
+	_, _, _, err := doc.RenderFont("UnknownFont", "A")
+	if !errors.Is(err, ErrNoValue) {
+		t.Errorf("want ErrNoValue, got %v", err)
+	}
+	if errors.Is(err, ErrUnsupported) {
+		t.Errorf("ErrNoValue must not match ErrUnsupported")
+	}
+}

@@ -520,14 +520,15 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	}
 
 	// --- Phase 10: command values ---
-	// LO 26.2 returns NULL (→ ErrUnsupported) for some .uno commands
-	// when the document has just loaded; tolerate that rather than
-	// hard-fail. A returned-but-malformed JSON payload is still a
-	// real bug we want to catch.
+	// LO often returns no payload (ErrNoValue) for .uno commands on a
+	// freshly-loaded doc — tolerate that. ErrUnsupported is now a
+	// real signal (vtable slot missing on this LO build) and stays a
+	// hard failure; a returned-but-malformed JSON payload is also a
+	// hard failure.
 	raw, err := doc.GetCommandValues(".uno:Save")
 	switch {
-	case errors.Is(err, ErrUnsupported):
-		t.Logf("Phase 10: GetCommandValues(.uno:Save) returned ErrUnsupported (LO build/state dependent)")
+	case errors.Is(err, ErrNoValue):
+		t.Logf("Phase 10: GetCommandValues(.uno:Save) returned ErrNoValue (LO had no current value)")
 	case err != nil:
 		t.Errorf("Phase 10: GetCommandValues(.uno:Save): %v", err)
 	default:
