@@ -42,9 +42,16 @@ func (d *Document) RenderPNG(dpiScale float64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return encodePNG("RenderPNG", img)
+}
+
+// encodePNG is the common png.Encode wrapper used by RenderPNG and
+// RenderPagePNG. op labels the *LOKError so error messages identify
+// the high-level caller.
+func encodePNG(op string, img *image.NRGBA) ([]byte, error) {
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
-		return nil, &LOKError{Op: "RenderPNG", Detail: err.Error(), err: err}
+		return nil, &LOKError{Op: op, Detail: err.Error(), err: err}
 	}
 	return buf.Bytes(), nil
 }

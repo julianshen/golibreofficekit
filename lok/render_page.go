@@ -3,10 +3,8 @@
 package lok
 
 import (
-	"bytes"
 	"fmt"
 	"image"
-	"image/png"
 )
 
 // RenderPage renders a single page of the document at the given DPI
@@ -39,7 +37,11 @@ func (d *Document) RenderPage(page int, dpiScale float64) (*image.NRGBA, error) 
 
 	parts := d.office.be.DocumentGetParts(d.h)
 	if parts > 0 {
-		return d.renderMultiPartPage(page, parts, dpiScale)
+		if page < 0 || page >= parts {
+			return nil, &LOKError{Op: "RenderPage",
+				Detail: fmt.Sprintf("page %d out of range [0, %d)", page, parts)}
+		}
+		return d.renderMultiPartPage(page, dpiScale)
 	}
 	return d.renderWriterPage(page, dpiScale)
 }
@@ -50,11 +52,7 @@ func (d *Document) RenderPagePNG(page int, dpiScale float64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		return nil, &LOKError{Op: "RenderPagePNG", Detail: err.Error(), err: err}
-	}
-	return buf.Bytes(), nil
+	return encodePNG("RenderPagePNG", img)
 }
 
 // renderWriterPage handles the Writer/single-part case via
@@ -73,32 +71,17 @@ func (d *Document) renderWriterPage(page int, dpiScale float64) (*image.NRGBA, e
 			Detail: fmt.Sprintf("page %d out of range [0, %d)", page, len(rects))}
 	}
 	r := rects[page]
-	if r.W <= 0 || r.H <= 0 {
-		return nil, &LOKError{Op: "RenderPage", Detail: "page has zero dimensions"}
-	}
-	if err := requireInt32Rect("RenderPage", r); err != nil {
-		return nil, err
-	}
-	pxW := twipsToPixels(r.W, dpiScale)
-	pxH := twipsToPixels(r.H, dpiScale)
-	if pxW <= 0 || pxH <= 0 {
-		return nil, &LOKError{Op: "RenderPage", Detail: "rendered size collapses to zero pixels"}
-	}
-	img := image.NewNRGBA(image.Rect(0, 0, pxW, pxH))
-	d.office.be.DocumentPaintTile(d.h, img.Pix, pxW, pxH,
-		int(r.X), int(r.Y), int(r.W), int(r.H))
-	unpremultiplyBGRAToNRGBA(img.Pix, img.Pix, pxW, pxH)
-	return img, nil
+	return d.paintToNRGBA(r, dpiScale, func(buf []byte, pxW, pxH int) {
+		d.office.be.DocumentPaintTile(d.h, buf, pxW, pxH,
+			int(r.X), int(r.Y), int(r.W), int(r.H))
+	})
 }
 
 // renderMultiPartPage handles Calc/Impress/Draw via SetPart +
-// DocumentSize + PaintPartTile. The active part is saved and restored.
-// The lock is held by the caller.
-func (d *Document) renderMultiPartPage(page, parts int, dpiScale float64) (*image.NRGBA, error) {
-	if page < 0 || page >= parts {
-		return nil, &LOKError{Op: "RenderPage",
-			Detail: fmt.Sprintf("page %d out of range [0, %d)", page, parts)}
-	}
+// DocumentSize + PaintPartTile. The active part is saved and
+// restored. Caller has already bounds-checked page and holds the
+// document lock.
+func (d *Document) renderMultiPartPage(page int, dpiScale float64) (*image.NRGBA, error) {
 	active := d.office.be.DocumentGetPart(d.h)
 	d.office.be.DocumentSetPart(d.h, page)
 	defer d.office.be.DocumentSetPart(d.h, active)
@@ -108,16 +91,32 @@ func (d *Document) renderMultiPartPage(page, parts int, dpiScale float64) (*imag
 		return nil, &LOKError{Op: "RenderPage",
 			Detail: fmt.Sprintf("page %d has zero DocumentSize", page)}
 	}
-	if err := requireInt32Rect("RenderPage", TwipRect{W: w, H: h}); err != nil {
+	r := TwipRect{W: w, H: h}
+	return d.paintToNRGBA(r, dpiScale, func(buf []byte, pxW, pxH int) {
+		d.office.be.DocumentPaintPartTile(d.h, buf, page, 0, pxW, pxH, 0, 0, int(w), int(h))
+	})
+}
+
+// paintToNRGBA validates the twip rect, converts to pixel dimensions
+// at dpiScale, allocates the NRGBA, runs paint to fill img.Pix with
+// premultiplied BGRA, then unpremultiplies in place. Caller holds
+// the document lock; paint must be a synchronous backend call that
+// fills exactly len(img.Pix) bytes.
+func (d *Document) paintToNRGBA(r TwipRect, dpiScale float64, paint func(buf []byte, pxW, pxH int)) (*image.NRGBA, error) {
+	const op = "RenderPage"
+	if r.W <= 0 || r.H <= 0 {
+		return nil, &LOKError{Op: op, Detail: "page has zero dimensions"}
+	}
+	if err := requireInt32Rect(op, r); err != nil {
 		return nil, err
 	}
-	pxW := twipsToPixels(w, dpiScale)
-	pxH := twipsToPixels(h, dpiScale)
+	pxW := twipsToPixels(r.W, dpiScale)
+	pxH := twipsToPixels(r.H, dpiScale)
 	if pxW <= 0 || pxH <= 0 {
-		return nil, &LOKError{Op: "RenderPage", Detail: "rendered size collapses to zero pixels"}
+		return nil, &LOKError{Op: op, Detail: "rendered size collapses to zero pixels"}
 	}
-	img := image.NewNRGBA(image.Rect(0, 0, pxW, pxH))
-	d.office.be.DocumentPaintPartTile(d.h, img.Pix, page, 0, pxW, pxH, 0, 0, int(w), int(h))
+	img := image.NewNRGBA(imageBoundsForTile(pxW, pxH))
+	paint(img.Pix, pxW, pxH)
 	unpremultiplyBGRAToNRGBA(img.Pix, img.Pix, pxW, pxH)
 	return img, nil
 }
