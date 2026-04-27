@@ -368,6 +368,11 @@ func (f *fakePaintingBackend) DocumentPaintTile(_ documentHandle, buf []byte, px
 	f.paintCalls = append(f.paintCalls, fakePaint{pxW: pxW, pxH: pxH, x: x, y: y, w: w, h: h, bufLen: len(buf)})
 }
 
+func (f *fakePaintingBackend) DocumentPaintPartTile(_ documentHandle, buf []byte, part, mode, pxW, pxH, x, y, w, h int) {
+	copy(buf, f.paintBytes)
+	f.partPaintCalls = append(f.partPaintCalls, fakePartPaint{part: part, mode: mode, pxW: pxW, pxH: pxH, x: x, y: y, w: w, h: h, bufLen: len(buf)})
+}
+
 // loadFakeDocWithBackend is loadFakeDoc for callers that need to
 // install a backend other than *fakeBackend (e.g. *fakePaintingBackend
 // which embeds it).
