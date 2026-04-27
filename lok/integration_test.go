@@ -310,6 +310,25 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 		t.Logf("RenderPNG: %d bytes", len(pngBytes))
 	}
 
+	// RenderPage(0): a Writer fixture has at least one page in
+	// PartPageRectangles. Render page 0 and assert PNG round-trip.
+	// nParts==0 for Writer, so RenderPage takes the single-part branch.
+	if pageBytes, perr := doc.RenderPagePNG(0, 1.0); perr != nil {
+		// PartPageRectangles can legitimately be empty on some LO
+		// builds (the test logged that earlier); a "no pages" error
+		// is tolerable but anything else is a regression.
+		var lokErr *LOKError
+		if errors.As(perr, &lokErr) && strings.Contains(lokErr.Detail, "PartPageRectangles empty") {
+			t.Logf("RenderPagePNG: skipped — %v", perr)
+		} else {
+			t.Errorf("RenderPagePNG(0): %v", perr)
+		}
+	} else if len(pageBytes) < 8 || string(pageBytes[:8]) != "\x89PNG\r\n\x1a\n" {
+		t.Errorf("RenderPagePNG: output is not a valid PNG (first 8 bytes %x)", pageBytes[:min(8, len(pageBytes))])
+	} else {
+		t.Logf("RenderPagePNG(0): %d bytes", len(pageBytes))
+	}
+
 	// RenderSearchResult: pass a plausible SearchItem payload; tolerate
 	// both outcomes — a zero-match result and a real hit are both legal.
 	searchQuery := `{"SearchItem.SearchString":{"type":"string","value":"LibreOffice"},` +
