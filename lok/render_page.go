@@ -82,9 +82,15 @@ func (d *Document) renderWriterPage(page int, dpiScale float64) (*image.NRGBA, e
 // restored. Caller has already bounds-checked page and holds the
 // document lock.
 func (d *Document) renderMultiPartPage(page int, dpiScale float64) (*image.NRGBA, error) {
+	// LO can return -1 when the active view was destroyed; restoring
+	// to -1 leaves the doc in an undocumented state. Skip the restore
+	// in that case so we don't make things worse, and only restore
+	// when we actually moved the active part.
 	active := d.office.be.DocumentGetPart(d.h)
 	d.office.be.DocumentSetPart(d.h, page)
-	defer d.office.be.DocumentSetPart(d.h, active)
+	if active >= 0 && active != page {
+		defer d.office.be.DocumentSetPart(d.h, active)
+	}
 
 	w, h := d.office.be.DocumentGetDocumentSize(d.h)
 	if w <= 0 || h <= 0 {
