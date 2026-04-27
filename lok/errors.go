@@ -14,6 +14,7 @@ var (
 	ErrMacroFailed         = errors.New("lok: macro execution failed")
 	ErrSignFailed          = errors.New("lok: document signing failed")
 	ErrPasteFailed         = errors.New("lok: paste rejected by LibreOffice")
+	ErrNoValue             = errors.New("lok: LibreOffice produced no value for this call")
 )
 
 // LOKError wraps an error string returned by LibreOffice itself.
