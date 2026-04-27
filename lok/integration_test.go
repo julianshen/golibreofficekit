@@ -683,6 +683,83 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	if got := doc2.Type(); got != TypeText {
 		t.Errorf("reader-loaded Type()=%v, want Text", got)
 	}
+
+	// PDF + PNG round-trip across the four major doc types. Writer
+	// (TypeText) is exercised earlier on doc; here we cover Calc,
+	// Impress, Draw to confirm SaveAs("pdf") and RenderPagePNG work
+	// for non-Writer types against real LO.
+	fixturesDir := filepath.Dir(fixture)
+	for _, c := range []struct {
+		label    string
+		filename string
+		want     DocumentType
+	}{
+		{"Calc", "hello.ods", TypeSpreadsheet},
+		{"Impress", "hello.odp", TypePresentation},
+		{"Draw", "hello.odg", TypeDrawing},
+	} {
+		t.Run(c.label, func(t *testing.T) {
+			verifyDocTypeRendering(t, o, c.label, filepath.Join(fixturesDir, c.filename), c.want)
+		})
+	}
+}
+
+// verifyDocTypeRendering loads a fixture, asserts its DocumentType,
+// and verifies SaveAs("pdf") + RenderPagePNG(0, 1.0) both produce
+// non-empty output.
+func verifyDocTypeRendering(t *testing.T, o *Office, label, fixturePath string, want DocumentType) {
+	t.Helper()
+	doc, err := o.Load(fixturePath)
+	if err != nil {
+		t.Fatalf("%s: Load(%s): %v", label, fixturePath, err)
+	}
+	defer doc.Close()
+
+	if got := doc.Type(); got != want {
+		t.Errorf("%s: Type()=%v, want %v", label, got, want)
+	}
+
+	pdfPath := filepath.Join(t.TempDir(), label+".pdf")
+	if err := doc.SaveAs(pdfPath, "pdf", ""); err != nil {
+		t.Errorf("%s: SaveAs pdf: %v", label, err)
+	} else if st, statErr := os.Stat(pdfPath); statErr != nil {
+		t.Errorf("%s: PDF stat: %v", label, statErr)
+	} else if st.Size() == 0 {
+		t.Errorf("%s: PDF is zero bytes", label)
+	} else if !startsWith(pdfPath, "%PDF-") {
+		t.Errorf("%s: PDF magic header missing", label)
+	} else {
+		t.Logf("%s: SaveAs pdf → %d bytes", label, st.Size())
+	}
+
+	if err := doc.InitializeForRendering(""); err != nil {
+		t.Fatalf("%s: InitializeForRendering: %v", label, err)
+	}
+	pngBytes, err := doc.RenderPagePNG(0, 1.0)
+	if err != nil {
+		t.Errorf("%s: RenderPagePNG(0): %v", label, err)
+		return
+	}
+	if len(pngBytes) < 8 || string(pngBytes[:8]) != "\x89PNG\r\n\x1a\n" {
+		t.Errorf("%s: RenderPagePNG output is not a valid PNG (first 8 bytes %x)",
+			label, pngBytes[:min(8, len(pngBytes))])
+	} else {
+		t.Logf("%s: RenderPagePNG(0) → %d bytes", label, len(pngBytes))
+	}
+}
+
+// startsWith reports whether the file at path begins with the given
+// magic byte sequence. Used to sanity-check PDF magic without
+// pulling in a full parser.
+func startsWith(path, magic string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	buf := make([]byte, len(magic))
+	n, _ := f.Read(buf)
+	return n == len(magic) && string(buf) == magic
 }
 
 func parseWindowIDFromPayload(payload []byte) uint32 {
