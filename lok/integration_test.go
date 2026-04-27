@@ -296,6 +296,20 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 		}
 	}
 
+	// RenderPNG: end-to-end check that DocumentSize → twipsToPixels →
+	// PaintTile → unpremultiply → png.Encode round-trips. The fixture
+	// is a one-paragraph "Hello." Writer doc, so the rendered output
+	// is small but non-empty.
+	pngBytes, err := doc.RenderPNG(1.0)
+	if err != nil {
+		t.Errorf("RenderPNG: %v", err)
+	}
+	if len(pngBytes) < 8 || string(pngBytes[:8]) != "\x89PNG\r\n\x1a\n" {
+		t.Errorf("RenderPNG: output is not a valid PNG (first 8 bytes %x)", pngBytes[:min(8, len(pngBytes))])
+	} else {
+		t.Logf("RenderPNG: %d bytes", len(pngBytes))
+	}
+
 	// RenderSearchResult: pass a plausible SearchItem payload; tolerate
 	// both outcomes — a zero-match result and a real hit are both legal.
 	searchQuery := `{"SearchItem.SearchString":{"type":"string","value":"LibreOffice"},` +
