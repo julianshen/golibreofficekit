@@ -84,16 +84,6 @@ jobs:
           go version
           /usr/lib/libreoffice/program/soffice --version || true
 
-      - name: Probe LO program/ directory
-        run: |
-          echo "--- contents of /usr/lib/libreoffice/program/ ---"
-          ls -la /usr/lib/libreoffice/program/ | head -80
-          echo "--- libsoffice* matches ---"
-          ls /usr/lib/libreoffice/program/libsoffice* 2>/dev/null || echo "(none)"
-          echo "--- libreoffice-related .so files anywhere in /usr ---"
-          find /usr -name 'libsoffice*.so*' 2>/dev/null || true
-          find /usr -name 'libreoffice*kit*.so*' 2>/dev/null || true
-
       - name: Run integration smoke
         env:
           # GODEBUG=asyncpreemptoff=1 is set by the Makefile target;

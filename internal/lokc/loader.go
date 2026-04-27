@@ -31,39 +31,56 @@ func (l *Library) HookVersion() int { return l.hookVersion }
 // to the right signature.
 func (l *Library) HookSymbol() unsafe.Pointer { return l.hookSymbol }
 
-// OpenLibrary dlopens <installPath>/libsofficeapp.{so,dylib} and resolves
-// libreofficekit_hook_2, falling back to libreofficekit_hook.
+// OpenLibrary dlopens the LibreOffice runtime under installPath and
+// resolves libreofficekit_hook_2, falling back to libreofficekit_hook.
+//
+// On Linux it walks soCandidates() — first libsofficeapp.so (the
+// upstream LOK layout) and then libmergedlo.so (Debian/Ubuntu's
+// apt libreoffice merged build). On macOS only libsofficeapp.dylib
+// is tried.
 func OpenLibrary(installPath string) (*Library, error) {
 	if installPath == "" {
 		return nil, ErrInstallPathRequired
 	}
-	handle, err := dlOpen(filepath.Join(installPath, soFilename()))
-	if err != nil {
-		return nil, err
-	}
-	for _, attempt := range []struct {
-		name    string
-		version int
-	}{
-		{"libreofficekit_hook_2", 2},
-		{"libreofficekit_hook", 1},
-	} {
-		if sym, symErr := dlSym(handle, attempt.name); symErr == nil {
-			return &Library{
-				installPath: installPath,
-				hookSymbol:  sym,
-				hookVersion: attempt.version,
-			}, nil
-		} else {
-			err = symErr
+	var lastErr error
+	for _, name := range soCandidates() {
+		handle, err := dlOpen(filepath.Join(installPath, name))
+		if err != nil {
+			lastErr = err
+			continue
 		}
+		// Found a runtime; the hook symbol must be in this one — we
+		// don't fall through to other candidates if a runtime opened
+		// but lacks the hook, because mixing runtimes from the same
+		// installPath is never correct.
+		for _, attempt := range []struct {
+			name    string
+			version int
+		}{
+			{"libreofficekit_hook_2", 2},
+			{"libreofficekit_hook", 1},
+		} {
+			if sym, symErr := dlSym(handle, attempt.name); symErr == nil {
+				return &Library{
+					installPath: installPath,
+					hookSymbol:  sym,
+					hookVersion: attempt.version,
+				}, nil
+			} else {
+				lastErr = symErr
+			}
+		}
+		return nil, lastErr
 	}
-	return nil, err
+	return nil, lastErr
 }
 
-func soFilename() string {
+// soCandidates returns the runtime filenames OpenLibrary will try, in
+// preference order. Linux walks both the upstream layout and Ubuntu's
+// merged-build layout; darwin uses the upstream name only.
+func soCandidates() []string {
 	if runtime.GOOS == "darwin" {
-		return "libsofficeapp.dylib"
+		return []string{"libsofficeapp.dylib"}
 	}
-	return "libsofficeapp.so"
+	return []string{"libsofficeapp.so", "libmergedlo.so"}
 }
