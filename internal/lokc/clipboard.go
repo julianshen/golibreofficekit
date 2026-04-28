@@ -69,6 +69,15 @@ import (
 	"unsafe"
 )
 
+// ErrClipboardFailed is returned when LOK's getClipboard or
+// setClipboard reports failure (the call returned 0, not -1). It is
+// promoted to a package-level sentinel so callers — including the
+// public lok package — can errors.Is against it. A single sentinel
+// covers both directions because the LOK contract is identical:
+// "the slot is implemented but the operation failed", with no further
+// detail offered.
+var ErrClipboardFailed = errors.New("lokc: clipboard operation reported failure")
+
 // ClipboardItem is the in-package representation of one per-view
 // clipboard entry returned by DocumentGetClipboard. Data is nil when
 // LOK had no payload for the corresponding mime.
@@ -111,7 +120,7 @@ func DocumentGetClipboard(d DocumentHandle, mimeTypes []string) ([]ClipboardItem
 	case 0:
 		// LOK reported failure; clean up any partial allocation.
 		C.go_doc_free_clipboard(count, outMimes, outSizes, outStreams)
-		return nil, errors.New("lokc: getClipboard returned failure")
+		return nil, ErrClipboardFailed
 	}
 	defer C.go_doc_free_clipboard(count, outMimes, outSizes, outStreams)
 
@@ -182,7 +191,7 @@ func DocumentSetClipboard(d DocumentHandle, items []ClipboardItem) error {
 	case -1:
 		return ErrUnsupported
 	case 0:
-		return errors.New("lokc: setClipboard returned failure")
+		return ErrClipboardFailed
 	}
 	return nil
 }
