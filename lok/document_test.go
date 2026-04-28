@@ -8,6 +8,8 @@ import (
 	"os"
 	"testing"
 	"testing/iotest"
+
+	"github.com/julianshen/golibreofficekit/internal/lokc"
 )
 
 func TestDocumentType_String(t *testing.T) {
@@ -385,6 +387,67 @@ func TestSaveAs_BackendError(t *testing.T) {
 	err := doc.SaveAs("/tmp/x.pdf", "pdf", "")
 	if !errors.Is(err, synth) {
 		t.Errorf("want synthetic via Unwrap, got %v", err)
+	}
+}
+
+// TestSaveAs_SurfacesLOErrorDetail asserts that when DocumentSaveAs
+// fails with lokc.ErrSaveFailed AND LibreOffice has a pending error,
+// Document.SaveAs returns *LOKError{Op:"Save", Detail:<LO message>}.
+// Save failures otherwise surface as the bare "saveAs returned
+// failure" sentinel — useless for users trying to figure out why
+// (read-only filesystem? unknown filter? format mismatch?).
+func TestSaveAs_SurfacesLOErrorDetail(t *testing.T) {
+	fb := &fakeBackend{
+		saveErr:     lokc.ErrSaveFailed,
+		officeError: "filter not registered",
+	}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	err := doc.SaveAs("/tmp/x.pdf", "pdf", "")
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) {
+		t.Fatalf("SaveAs: want *LOKError, got %T %v", err, err)
+	}
+	if lokErr.Op != "Save" {
+		t.Errorf("Op=%q, want Save", lokErr.Op)
+	}
+	if lokErr.Detail != "filter not registered" {
+		t.Errorf("Detail=%q, want %q", lokErr.Detail, "filter not registered")
+	}
+	// errors.Is must still walk to the underlying lokc sentinel so
+	// callers that branch on it keep working.
+	if !errors.Is(err, lokc.ErrSaveFailed) {
+		t.Errorf("errors.Is(lokc.ErrSaveFailed) failed: %v", err)
+	}
+}
+
+// TestSave_SurfacesLOErrorDetail covers the same path through Save
+// (which forwards to DocumentSaveAs internally with origURL).
+func TestSave_SurfacesLOErrorDetail(t *testing.T) {
+	fb := &fakeBackend{
+		saveErr:     lokc.ErrSaveFailed,
+		officeError: "permission denied",
+	}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	err := doc.Save()
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) {
+		t.Fatalf("Save: want *LOKError, got %T %v", err, err)
+	}
+	if lokErr.Op != "Save" {
+		t.Errorf("Op=%q, want Save", lokErr.Op)
+	}
+	if lokErr.Detail != "permission denied" {
+		t.Errorf("Detail=%q, want %q", lokErr.Detail, "permission denied")
 	}
 }
 

@@ -312,7 +312,7 @@ func (d *Document) SaveAs(path, format, filterOpts string) error {
 		return err
 	}
 	if err := d.office.be.DocumentSaveAs(d.h, fileURL, format, filterOpts); err != nil {
-		return wrapErr("SaveAs", err)
+		return wrapLOErr("Save", d.office, err)
 	}
 	return nil
 }
@@ -329,7 +329,7 @@ func (d *Document) Save() error {
 		return ErrClosed
 	}
 	if err := d.office.be.DocumentSaveAs(d.h, d.origURL, "", ""); err != nil {
-		return wrapErr("Save", err)
+		return wrapLOErr("Save", d.office, err)
 	}
 	return nil
 }
