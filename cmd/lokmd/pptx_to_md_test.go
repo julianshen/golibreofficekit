@@ -1,9 +1,52 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
+
+// fakeTempFile satisfies the namedCloser interface so we can drive the
+// reserveTempPath helper's Close-error path without touching disk.
+type fakeTempFile struct {
+	name     string
+	closeErr error
+}
+
+func (f *fakeTempFile) Name() string { return f.name }
+func (f *fakeTempFile) Close() error { return f.closeErr }
+
+func TestReserveTempPath_PropagatesCloseError(t *testing.T) {
+	want := errors.New("disk full")
+	_, err := reserveTempPath(func() (namedCloser, error) {
+		return &fakeTempFile{name: "/tmp/x.fodp", closeErr: want}, nil
+	})
+	if !errors.Is(err, want) {
+		t.Fatalf("got %v, want chain containing %v", err, want)
+	}
+}
+
+func TestReserveTempPath_PropagatesCreateError(t *testing.T) {
+	want := errors.New("no space")
+	_, err := reserveTempPath(func() (namedCloser, error) {
+		return nil, want
+	})
+	if !errors.Is(err, want) {
+		t.Fatalf("got %v, want chain containing %v", err, want)
+	}
+}
+
+func TestReserveTempPath_ReturnsName(t *testing.T) {
+	got, err := reserveTempPath(func() (namedCloser, error) {
+		return &fakeTempFile{name: "/tmp/picked.fodp"}, nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if got != "/tmp/picked.fodp" {
+		t.Errorf("path=%q, want /tmp/picked.fodp", got)
+	}
+}
 
 func TestParseFODPSlides_TwoSlides(t *testing.T) {
 	xml := `<?xml version="1.0"?>

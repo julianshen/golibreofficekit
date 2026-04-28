@@ -12,6 +12,33 @@ import (
 	"github.com/julianshen/golibreofficekit/lok"
 )
 
+// namedCloser is the small surface reserveTempPath needs from a
+// freshly-opened temp file: its name and a way to close it. *os.File
+// satisfies it, and tests substitute a fake to drive the Close-error
+// path which is otherwise unreachable from a real CreateTemp.
+type namedCloser interface {
+	Name() string
+	Close() error
+}
+
+// reserveTempPath calls create to obtain a temp file, closes it
+// immediately so a downstream writer (e.g. LOK's saveAs) can own the
+// path, and returns the path. Any error from create or Close is
+// wrapped and returned — discarding Close turned a disk-full ENOSPC
+// into a confusing "save flat-xml fodp" error one line later, hiding
+// the real cause.
+func reserveTempPath(create func() (namedCloser, error)) (string, error) {
+	tmp, err := create()
+	if err != nil {
+		return "", fmt.Errorf("create fodp temp: %w", err)
+	}
+	name := tmp.Name()
+	if err := tmp.Close(); err != nil {
+		return "", fmt.Errorf("close fodp temp: %w", err)
+	}
+	return name, nil
+}
+
 // extractSlidesAsMarkdown loads a presentation through LOK, has LO
 // save it as Flat OpenDocument Presentation (.fodp), and walks the
 // resulting XML to harvest each slide's title and body text.
@@ -22,12 +49,12 @@ import (
 // inside <draw:page>/<text:p> elements that we can iterate
 // deterministically.
 func extractSlidesAsMarkdown(doc *lok.Document) (string, error) {
-	tmp, err := os.CreateTemp("", "lokmd-extract-*.fodp")
+	tmpPath, err := reserveTempPath(func() (namedCloser, error) {
+		return os.CreateTemp("", "lokmd-extract-*.fodp")
+	})
 	if err != nil {
-		return "", fmt.Errorf("create fodp temp: %w", err)
+		return "", err
 	}
-	tmpPath := tmp.Name()
-	tmp.Close()
 	defer os.Remove(tmpPath)
 
 	if err := doc.SaveAs(tmpPath, "fodp", ""); err != nil {
