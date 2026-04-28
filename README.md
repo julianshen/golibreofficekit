@@ -4,10 +4,10 @@ Go binding for [LibreOfficeKit](https://wiki.documentfoundation.org/Development/
 (LOK), the C ABI exposed by LibreOffice for in-process loading, rendering,
 editing, and saving of Writer, Calc, Impress, and Draw documents.
 
-**Status:** pre-1.0, public API in flux. Method signatures may still change
-between minor versions; see the package CHANGELOG (TBD) and the [`lok`
-package godoc](https://pkg.go.dev/github.com/julianshen/golibreofficekit/lok)
-for the current surface.
+**Status:** 1.0. The public API in [`lok`](./lok) is stable under SemVer;
+breaking changes will bump the major version. See [`CHANGELOG.md`](./CHANGELOG.md)
+for release notes and the [`lok` package godoc](https://pkg.go.dev/github.com/julianshen/golibreofficekit/lok)
+for the current API surface.
 
 ## What it does
 
@@ -139,11 +139,14 @@ make lint              # go vet + gofmt check
 
 Project hand-off / contributor notes:
 
-- Project guide: [`CLAUDE.md`](./CLAUDE.md)
-- Design spec: [`docs/superpowers/specs/2026-04-19-lok-binding-design.md`](./docs/superpowers/specs/2026-04-19-lok-binding-design.md)
-- Phase-by-phase implementation plans: [`docs/superpowers/plans/`](./docs/superpowers/plans/)
-- Retrospectives: [`docs/retros/`](./docs/retros/)
+- [`CONTRIBUTING.md`](./CONTRIBUTING.md) — TDD discipline, branch naming, local workflow
+- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — package layout, threading, callbacks, error model
+- [`CLAUDE.md`](./CLAUDE.md) — long-form project rules (originally for AI agent contributors)
+- [`CHANGELOG.md`](./CHANGELOG.md) — release notes
+- [`docs/retros/`](./docs/retros/) — postmortems
 
 ## Licence
 
-To be decided before the first tagged release.
+[Apache License 2.0](./LICENSE). Bundled LibreOfficeKit headers under
+`third_party/lok/` are MPL-2.0 (see `third_party/lok/LICENSE` and
+[`NOTICE`](./NOTICE)).
