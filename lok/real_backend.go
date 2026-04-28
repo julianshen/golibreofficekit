@@ -249,6 +249,14 @@ func mapLokErr(err error) error {
 		return ErrSignFailed
 	case errors.Is(err, lokc.ErrPasteFailed):
 		return ErrPasteFailed
+	case errors.Is(err, lokc.ErrSaveFailed):
+		// Detail intentionally minimal: mapLokErr has no office
+		// handle, so it cannot consult OfficeGetError. The typical
+		// save path is Document.SaveAs / Save, which use wrapLOErr
+		// to populate Detail from LO. This case is the safety net
+		// for any future forwarder that surfaces a save failure
+		// without an Office in scope.
+		return &LOKError{Op: "Save", Detail: err.Error(), err: err}
 	}
 	return err
 }
