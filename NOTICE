@@ -1,0 +1,14 @@
+golibreofficekit
+Copyright 2026 Julian Shen
+
+This product includes software developed at Julian Shen
+(https://github.com/julianshen/golibreofficekit).
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+------------------------------------------------------------------------
+
+This product bundles header files from LibreOfficeKit
+(third_party/lok/LibreOfficeKit/) which are licensed under the
+Mozilla Public License 2.0. The full text of the MPL-2.0 is
+available at third_party/lok/LICENSE.

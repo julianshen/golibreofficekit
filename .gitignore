@@ -22,3 +22,4 @@ coverage.html
 
 # Session state from tooling plugins
 .remember/
+.kilo/

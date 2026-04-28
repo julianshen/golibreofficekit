@@ -4,10 +4,10 @@ Go binding for [LibreOfficeKit](https://wiki.documentfoundation.org/Development/
 (LOK), the C ABI exposed by LibreOffice for in-process loading, rendering,
 editing, and saving of Writer, Calc, Impress, and Draw documents.
 
-**Status:** pre-1.0, public API in flux. Method signatures may still change
-between minor versions; see the package CHANGELOG (TBD) and the [`lok`
-package godoc](https://pkg.go.dev/github.com/julianshen/golibreofficekit/lok)
-for the current surface.
+**Status:** 1.0. The public API in [`lok`](./lok) is stable under SemVer;
+breaking changes will bump the major version. See [`CHANGELOG.md`](./CHANGELOG.md)
+for release notes and the [`lok` package godoc](https://pkg.go.dev/github.com/julianshen/golibreofficekit/lok)
+for the current API surface.
 
 ## What it does
 
@@ -100,30 +100,109 @@ front-matter block (between two `---`) is stripped, and the first
 Both CLIs read the LibreOffice install path from `-lo-path`, then
 `$LOK_PATH`, then a small list of platform-default candidates.
 
-## Requirements
+## Installation
+
+### Prerequisites
 
 - **Go** 1.23 or newer.
-- **LibreOffice** 24.8 or newer for integration tests; 7.6+ should work
-  for the basic load/save/render paths.
-- **Platform**: Linux or macOS. Windows is not supported.
-- The cgo build needs the LOK header — vendored under
-  `third_party/lok/LibreOfficeKit/`. No additional `-dev` package is
-  required.
+- **LibreOffice** 24.8 or newer (7.6+ usually works for basic
+  load/save/render paths).
+- **Platform**: Linux (x86_64 / aarch64) or macOS (x86_64 / arm64).
+  Windows is not supported.
 
-## Install paths
+The cgo build is self-contained — the LOK header is vendored under
+`third_party/lok/`, so no `-dev` / `-devel` package is required.
 
-The path passed to `lok.New` (or `-lo-path` / `$LOK_PATH`) must point at
-LibreOffice's `program/` directory.
+### Install LibreOffice (Linux)
 
-| Platform           | Typical path                                            |
-|--------------------|---------------------------------------------------------|
-| Fedora / RHEL      | `/usr/lib64/libreoffice/program`                        |
-| Debian / Ubuntu    | `/usr/lib/libreoffice/program`                          |
-| Arch / openSUSE    | `/usr/lib/libreoffice/program`                          |
-| macOS (.app bundle)| `/Applications/LibreOffice.app/Contents/Frameworks`     |
+**Fedora / RHEL / CentOS Stream:**
 
-If the path is wrong, `New` returns an error wrapping every dlopen /
-dlsym attempt so the failure mode is debuggable.
+```bash
+sudo dnf install libreoffice
+# or, for a smaller footprint without the GUI front-end:
+sudo dnf install libreoffice-core libreoffice-writer libreoffice-calc \
+                 libreoffice-impress libreoffice-draw
+```
+
+**Debian / Ubuntu:**
+
+```bash
+sudo apt update
+sudo apt install libreoffice
+```
+
+**Arch Linux:**
+
+```bash
+sudo pacman -S libreoffice-fresh    # or libreoffice-still for the LTS branch
+```
+
+**openSUSE:**
+
+```bash
+sudo zypper install libreoffice
+```
+
+### Install LibreOffice (macOS)
+
+**Homebrew (recommended):**
+
+```bash
+brew install --cask libreoffice
+```
+
+**Direct download:** install the `.dmg` from
+<https://www.libreoffice.org/download/>.
+
+### Locate the install path
+
+`lok.New` (and the CLIs' `-lo-path` flag / `$LOK_PATH` env var) need the
+absolute path of LibreOffice's `program/` directory:
+
+| Platform                   | Typical path                                            |
+|----------------------------|---------------------------------------------------------|
+| Fedora / RHEL              | `/usr/lib64/libreoffice/program`                        |
+| Debian / Ubuntu            | `/usr/lib/libreoffice/program`                          |
+| Arch / openSUSE            | `/usr/lib/libreoffice/program`                          |
+| macOS (Homebrew or direct) | `/Applications/LibreOffice.app/Contents/Frameworks`     |
+
+Verify the path is correct — one of the LOK shared libraries must exist
+inside it:
+
+```bash
+# Linux: either libsofficeapp.so or libmergedlo.so (Debian/Ubuntu's apt build)
+ls "$LOK_PATH"/libsofficeapp.so "$LOK_PATH"/libmergedlo.so 2>/dev/null
+
+# macOS:
+ls "$LOK_PATH"/libsofficeapp.dylib
+```
+
+For convenience, export `LOK_PATH` so the binding and the CLIs pick it
+up automatically:
+
+```bash
+# Linux (~/.bashrc or ~/.zshrc):
+export LOK_PATH=/usr/lib64/libreoffice/program
+
+# macOS:
+export LOK_PATH=/Applications/LibreOffice.app/Contents/Frameworks
+```
+
+If the path is wrong, `lok.New` returns an error wrapping every dlopen
+/ dlsym attempt so the failure mode is debuggable.
+
+### Install the Go binding
+
+```bash
+go get github.com/julianshen/golibreofficekit/lok
+```
+
+Or install one of the bundled CLIs:
+
+```bash
+go install github.com/julianshen/golibreofficekit/cmd/lokconv@latest
+go install github.com/julianshen/golibreofficekit/cmd/lokmd@latest
+```
 
 ## Development
 
@@ -139,11 +218,14 @@ make lint              # go vet + gofmt check
 
 Project hand-off / contributor notes:
 
-- Project guide: [`CLAUDE.md`](./CLAUDE.md)
-- Design spec: [`docs/superpowers/specs/2026-04-19-lok-binding-design.md`](./docs/superpowers/specs/2026-04-19-lok-binding-design.md)
-- Phase-by-phase implementation plans: [`docs/superpowers/plans/`](./docs/superpowers/plans/)
-- Retrospectives: [`docs/retros/`](./docs/retros/)
+- [`CONTRIBUTING.md`](./CONTRIBUTING.md) — TDD discipline, branch naming, local workflow
+- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — package layout, threading, callbacks, error model
+- [`CLAUDE.md`](./CLAUDE.md) — long-form project rules (originally for AI agent contributors)
+- [`CHANGELOG.md`](./CHANGELOG.md) — release notes
+- [`docs/retros/`](./docs/retros/) — postmortems
 
 ## Licence
 
-To be decided before the first tagged release.
+[Apache License 2.0](./LICENSE). Bundled LibreOfficeKit headers under
+`third_party/lok/` are MPL-2.0 (see `third_party/lok/LICENSE` and
+[`NOTICE`](./NOTICE)).
