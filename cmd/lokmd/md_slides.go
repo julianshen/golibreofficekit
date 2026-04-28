@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/xml"
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -20,42 +21,55 @@ type slide struct {
 // the first leading "# " heading becomes the title; the remainder
 // becomes the body. A YAML-style Marp front-matter block (a `---`
 // at the very top with content and a closing `---`) is stripped
-// before splitting. Empty input yields a single empty slide so
-// callers always have something to render.
+// before splitting.
+//
+// Returns an error if the front-matter block is unterminated —
+// otherwise the opening `---` would be misread as a slide separator
+// and the directives (`marp: true`, etc.) would silently land in
+// the first slide's body.
 //
 // This is a deliberately minimal markdown reader — no full CommonMark
 // support, no nested formatting parsing. The goal is "give LO
 // something it can present" not "perfect markdown rendering."
-func parseMarkdownSlides(md string) []slide {
-	md = stripMarpFrontMatter(md)
+func parseMarkdownSlides(md string) ([]slide, error) {
+	// Normalise CRLF → LF up front so every downstream split-on-"\n"
+	// produces clean lines. The previous TrimSpace-based handling
+	// covered most cases but left stray \r in the leading line of
+	// each chunk, which made parseOneSlide miss the title.
+	md = strings.ReplaceAll(md, "\r\n", "\n")
+	md, err := stripMarpFrontMatter(md)
+	if err != nil {
+		return nil, err
+	}
 	chunks := splitOnHR(md)
 	if len(chunks) == 0 {
-		return []slide{{}}
+		return []slide{{}}, nil
 	}
 	out := make([]slide, 0, len(chunks))
 	for _, c := range chunks {
 		out = append(out, parseOneSlide(c))
 	}
-	return out
+	return out, nil
 }
 
 // stripMarpFrontMatter removes a leading `---\n…\n---` block. The
 // directives inside (e.g. `marp: true`, `theme: gaia`) aren't
 // honoured — they exist only to keep the source file Marp-compatible.
-// If the document doesn't start with `---`, nothing is stripped.
-func stripMarpFrontMatter(md string) string {
+// If the document doesn't start with `---`, the original input is
+// returned unchanged. An unterminated block (opening `---` with no
+// closing `---`) returns an error so the caller can fail loudly
+// instead of producing a slide whose body is the YAML directives.
+func stripMarpFrontMatter(md string) (string, error) {
 	lines := strings.Split(md, "\n")
 	if len(lines) < 2 || strings.TrimSpace(lines[0]) != "---" {
-		return md
+		return md, nil
 	}
 	for i := 1; i < len(lines); i++ {
 		if strings.TrimSpace(lines[i]) == "---" {
-			return strings.Join(lines[i+1:], "\n")
+			return strings.Join(lines[i+1:], "\n"), nil
 		}
 	}
-	// Unterminated front-matter — leave the source untouched so the
-	// user can see something rather than mysteriously losing content.
-	return md
+	return "", fmt.Errorf("unterminated Marp front-matter: opening --- on line 1 has no closing --- (add a --- on its own line after the directives)")
 }
 
 // splitOnHR splits md on lines that are exactly "---" after trimming

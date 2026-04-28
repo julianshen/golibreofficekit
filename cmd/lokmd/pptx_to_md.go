@@ -2,9 +2,10 @@ package main
 
 import (
 	"encoding/xml"
+	"errors"
 	"fmt"
+	"io"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -21,13 +22,18 @@ import (
 // inside <draw:page>/<text:p> elements that we can iterate
 // deterministically.
 func extractSlidesAsMarkdown(doc *lok.Document) (string, error) {
-	tmp := filepath.Join(os.TempDir(),
-		fmt.Sprintf("lokmd-extract-%d.fodp", os.Getpid()))
-	defer os.Remove(tmp)
-	if err := doc.SaveAs(tmp, "fodp", ""); err != nil {
+	tmp, err := os.CreateTemp("", "lokmd-extract-*.fodp")
+	if err != nil {
+		return "", fmt.Errorf("create fodp temp: %w", err)
+	}
+	tmpPath := tmp.Name()
+	tmp.Close()
+	defer os.Remove(tmpPath)
+
+	if err := doc.SaveAs(tmpPath, "fodp", ""); err != nil {
 		return "", fmt.Errorf("save flat-xml fodp: %w", err)
 	}
-	xmlBytes, err := os.ReadFile(tmp)
+	xmlBytes, err := os.ReadFile(tmpPath)
 	if err != nil {
 		return "", fmt.Errorf("read fodp: %w", err)
 	}
@@ -64,7 +70,10 @@ func parseFODPSlides(xmlBytes []byte) ([]fodpSlide, error) {
 	for {
 		tok, err := dec.Token()
 		if err != nil {
-			break
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, fmt.Errorf("decode fodp xml: %w", err)
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:

@@ -131,13 +131,23 @@ func mdToPPTX(o *lok.Office, inPath, outPath string) error {
 	if err != nil {
 		return fmt.Errorf("read %s: %w", inPath, err)
 	}
-	slides := parseMarkdownSlides(string(md))
-	fodpPath := filepath.Join(os.TempDir(),
-		fmt.Sprintf("lokmd-%d.fodp", os.Getpid()))
-	if err := os.WriteFile(fodpPath, []byte(slidesToFODP(slides)), 0o644); err != nil {
+	slides, err := parseMarkdownSlides(string(md))
+	if err != nil {
+		return fmt.Errorf("parse markdown: %w", err)
+	}
+	tmp, err := os.CreateTemp("", "lokmd-*.fodp")
+	if err != nil {
+		return fmt.Errorf("create fodp temp: %w", err)
+	}
+	fodpPath := tmp.Name()
+	defer os.Remove(fodpPath)
+	if _, err := tmp.WriteString(slidesToFODP(slides)); err != nil {
+		tmp.Close()
 		return fmt.Errorf("write fodp temp: %w", err)
 	}
-	defer os.Remove(fodpPath)
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close fodp temp: %w", err)
+	}
 
 	doc, err := o.Load(fodpPath)
 	if err != nil {

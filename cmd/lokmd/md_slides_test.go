@@ -14,7 +14,10 @@ First slide body.
 # Slide 2
 Second slide body.
 `
-	got := parseMarkdownSlides(input)
+	got, err := parseMarkdownSlides(input)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(got) != 2 {
 		t.Fatalf("got %d slides, want 2", len(got))
 	}
@@ -33,7 +36,10 @@ Second slide body.
 }
 
 func TestParseMarkdownSlides_EmptyInputYieldsOneEmptySlide(t *testing.T) {
-	got := parseMarkdownSlides("")
+	got, err := parseMarkdownSlides("")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(got) != 1 {
 		t.Fatalf("got %d slides, want 1 (empty placeholder)", len(got))
 	}
@@ -43,7 +49,10 @@ func TestParseMarkdownSlides_EmptyInputYieldsOneEmptySlide(t *testing.T) {
 }
 
 func TestParseMarkdownSlides_NoTitleHeading(t *testing.T) {
-	got := parseMarkdownSlides("just a body, no heading")
+	got, err := parseMarkdownSlides("just a body, no heading")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(got) != 1 {
 		t.Fatalf("got %d slides, want 1", len(got))
 	}
@@ -57,7 +66,10 @@ func TestParseMarkdownSlides_NoTitleHeading(t *testing.T) {
 
 func TestParseMarkdownSlides_TrimsWhitespaceAroundSeparator(t *testing.T) {
 	input := "# A\nfirst\n\n   ---   \n\n# B\nsecond"
-	got := parseMarkdownSlides(input)
+	got, err := parseMarkdownSlides(input)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(got) != 2 {
 		t.Fatalf("got %d slides, want 2", len(got))
 	}
@@ -80,7 +92,10 @@ body
 # Slide 2
 more
 `
-	got := parseMarkdownSlides(input)
+	got, err := parseMarkdownSlides(input)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(got) != 2 {
 		t.Fatalf("got %d slides, want 2", len(got))
 	}
@@ -97,9 +112,43 @@ more
 	}
 }
 
+func TestParseMarkdownSlides_UnterminatedFrontMatterErrors(t *testing.T) {
+	// Opening --- with no closing --- previously returned the input
+	// unchanged, which made splitOnHR see the opening as a slide
+	// separator and the directives ended up as slide body content.
+	// Now it must surface the error so the user can fix the source.
+	input := "---\nmarp: true\n# Hello\n"
+	if _, err := parseMarkdownSlides(input); err == nil {
+		t.Errorf("expected error for unterminated front-matter, got nil")
+	} else if !strings.Contains(err.Error(), "unterminated") {
+		t.Errorf("error %q does not mention unterminated front-matter", err)
+	}
+}
+
+// CRLF tolerance — Marp source authored on Windows uses \r\n. The
+// current parser handles it via TrimSpace; pin that behaviour so a
+// future refactor (e.g. swapping TrimSpace for TrimRight("\n")) can't
+// silently break Windows users.
+func TestParseMarkdownSlides_CRLFLineEndings(t *testing.T) {
+	input := "---\r\nmarp: true\r\n---\r\n\r\n# Hello\r\nbody\r\n\r\n---\r\n\r\n# World\r\nmore\r\n"
+	got, err := parseMarkdownSlides(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d slides, want 2 (CRLF input)", len(got))
+	}
+	if got[0].title != "Hello" || got[1].title != "World" {
+		t.Errorf("CRLF-input titles = %q, %q; want Hello, World", got[0].title, got[1].title)
+	}
+}
+
 func TestParseMarkdownSlides_NoSeparatorYieldsSingleSlide(t *testing.T) {
 	input := "# Only Slide\nWith body."
-	got := parseMarkdownSlides(input)
+	got, err := parseMarkdownSlides(input)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(got) != 1 {
 		t.Fatalf("got %d slides, want 1", len(got))
 	}
