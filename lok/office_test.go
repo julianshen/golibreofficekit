@@ -235,19 +235,21 @@ type fakeDoc struct{}
 func (*fakeDoc) documentBrand() {}
 
 func (f *fakeBackend) DocumentLoad(_ officeHandle, url string) (documentHandle, error) {
+	// Record the call before honouring loadErr so error-path tests can
+	// still assert which entry point was taken.
+	f.lastLoadURL = url
 	if f.loadErr != nil {
 		return nil, f.loadErr
 	}
-	f.lastLoadURL = url
 	return &fakeDoc{}, nil
 }
 
 func (f *fakeBackend) DocumentLoadWithOptions(_ officeHandle, url, opts string) (documentHandle, error) {
+	f.lastLoadURL = url
+	f.lastLoadOpts = opts
 	if f.loadErr != nil {
 		return nil, f.loadErr
 	}
-	f.lastLoadURL = url
-	f.lastLoadOpts = opts
 	return &fakeDoc{}, nil
 }
 

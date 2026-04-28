@@ -231,6 +231,39 @@ func TestLoad_SurfacesLOErrorDetail(t *testing.T) {
 	}
 }
 
+// TestLoadWithOptions_SurfacesLOErrorDetail mirrors
+// TestLoad_SurfacesLOErrorDetail for the LoadWithOptions code path —
+// triggered by passing any LoadOption that touches the options string.
+// LoadWithOptions and Load take separate backend entry points, so
+// both routes must surface the LO diagnostic.
+func TestLoadWithOptions_SurfacesLOErrorDetail(t *testing.T) {
+	fb := &fakeBackend{
+		loadErr:     errors.New("synthetic load failure"),
+		officeError: "filter rejected",
+	}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+
+	_, err := o.Load("/tmp/x.docx", WithReadOnly())
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) {
+		t.Fatalf("Load: want *LOKError, got %T %v", err, err)
+	}
+	if lokErr.Op != "Load" {
+		t.Errorf("Op=%q, want Load", lokErr.Op)
+	}
+	if lokErr.Detail != "filter rejected" {
+		t.Errorf("Detail=%q, want %q", lokErr.Detail, "filter rejected")
+	}
+	// Also assert the LoadWithOptions path was exercised, not the
+	// no-options path. fb.lastLoadOpts is only populated by
+	// DocumentLoadWithOptions in the fake.
+	if fb.lastLoadOpts == "" {
+		t.Error("LoadWithOptions path was not exercised; fb.lastLoadOpts empty")
+	}
+}
+
 // TestLoad_FallsBackToBackendErrorWhenNoLODetail confirms the
 // fallback: when LO has nothing pending in getError, the *LOKError
 // still surfaces a useful message rather than dropping the cause.
