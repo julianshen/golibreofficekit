@@ -280,6 +280,15 @@ func (d *Document) DroppedEvents() uint64 {
 	return d.listeners.Dropped()
 }
 
+// PanickedListeners returns the cumulative count of document-level
+// listener callbacks that panicked. The dispatcher recovers from
+// listener panics so other listeners keep running, but the count is
+// surfaced here so callers can detect a permanently broken listener
+// instead of losing the signal to logs alone.
+func (d *Document) PanickedListeners() uint64 {
+	return d.listeners.Panicked()
+}
+
 // Type returns the document's LOK type. The value is cached at Load
 // (document type is immutable post-load), so Type doesn't round-trip
 // through the backend. Returns TypeOther on a closed document. The

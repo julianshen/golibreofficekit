@@ -15,6 +15,7 @@ var (
 	ErrSignFailed          = errors.New("lok: document signing failed")
 	ErrPasteFailed         = errors.New("lok: paste rejected by LibreOffice")
 	ErrNoValue             = errors.New("lok: LibreOffice produced no value for this call")
+	ErrClipboardFailed     = errors.New("lok: clipboard operation reported failure")
 )
 
 // LOKError wraps an error string returned by LibreOffice itself.

@@ -35,6 +35,7 @@ type listenerSet struct {
 	nextID    uint64
 	ch        chan Event
 	dropped   atomic.Uint64
+	panicked  atomic.Uint64
 	closed    atomic.Bool
 	closeOnce sync.Once
 	stopCh    chan struct{}
@@ -111,6 +112,10 @@ func (ls *listenerSet) Dispatch(typ int, payload []byte) {
 // Dropped returns the cumulative dropped-event count.
 func (ls *listenerSet) Dropped() uint64 { return ls.dropped.Load() }
 
+// Panicked returns the cumulative count of listener-callback panics
+// the dispatcher recovered from.
+func (ls *listenerSet) Panicked() uint64 { return ls.panicked.Load() }
+
 // run is the dispatcher goroutine. It exits when stopCh is closed.
 func (ls *listenerSet) run() {
 	defer close(ls.done)
@@ -138,6 +143,7 @@ func (ls *listenerSet) run() {
 func (ls *listenerSet) runOne(cb func(Event), ev Event) {
 	defer func() {
 		if r := recover(); r != nil {
+			ls.panicked.Add(1)
 			log.Printf("lok: listener panic: %v", r)
 		}
 	}()

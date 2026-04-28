@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"errors"
 	"testing"
+
+	"github.com/julianshen/golibreofficekit/internal/lokc"
 )
 
 func TestClipboardItem_ShapeCompiles(t *testing.T) {
@@ -202,6 +204,22 @@ func TestSetClipboard_BackendErrorSurfaces(t *testing.T) {
 	items := []ClipboardItem{{MimeType: "text/plain", Data: []byte("hi")}}
 	if err := doc.SetClipboard(items); !errors.Is(err, ErrUnsupported) {
 		t.Errorf("want ErrUnsupported, got %v", err)
+	}
+}
+
+// When the lokc layer reports a clipboard failure (LOK's getClipboard
+// or setClipboard returned 0), mapLokErr must translate the internal
+// sentinel to the public lok.ErrClipboardFailed so callers can
+// errors.Is against it. Before the fix the lokc layer returned inline
+// errors.New() values, so callers had no way to distinguish a
+// clipboard failure from any other error.
+func TestMapLokErr_ClipboardFailed(t *testing.T) {
+	got := mapLokErr(lokc.ErrClipboardFailed)
+	if !errors.Is(got, ErrClipboardFailed) {
+		t.Errorf("mapLokErr(lokc.ErrClipboardFailed)=%v, want lok.ErrClipboardFailed", got)
+	}
+	if errors.Is(got, ErrUnsupported) {
+		t.Errorf("mapLokErr(lokc.ErrClipboardFailed)=%v must not match ErrUnsupported", got)
 	}
 }
 

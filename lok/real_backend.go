@@ -257,6 +257,8 @@ func mapLokErr(err error) error {
 		// for any future forwarder that surfaces a save failure
 		// without an Office in scope.
 		return &LOKError{Op: "Save", Detail: err.Error(), err: err}
+	case errors.Is(err, lokc.ErrClipboardFailed):
+		return ErrClipboardFailed
 	}
 	return err
 }
