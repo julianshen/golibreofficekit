@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/julianshen/golibreofficekit/lok"
@@ -171,7 +172,7 @@ func isAutoPageName(name string) bool {
 	for _, prefix := range []string{"page", "slide"} {
 		if rest, ok := strings.CutPrefix(lower, prefix); ok {
 			rest = strings.TrimLeft(rest, "- ")
-			if _, err := fmt.Sscanf(rest, "%d", new(int)); err == nil {
+			if _, err := strconv.ParseInt(rest, 10, 64); err == nil {
 				return true
 			}
 		}

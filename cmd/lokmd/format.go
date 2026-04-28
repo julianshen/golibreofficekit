@@ -1,9 +1,6 @@
 package main
 
 import (
-	"errors"
-	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -70,36 +67,4 @@ func supportedConversion(in, out docFormat) bool {
 	}
 	_, ok := pairs[[2]docFormat{in, out}]
 	return ok
-}
-
-// defaultLOPathCandidates is the auto-detect list when neither
-// -lo-path nor $LOK_PATH is set. Order matters — first existing wins.
-// Mirrors lokconv's list; if a third CLI lands, this should move to
-// an internal/cli helper.
-var defaultLOPathCandidates = []string{
-	"/usr/lib/libreoffice/program",                      // Debian/Ubuntu (apt)
-	"/usr/lib64/libreoffice/program",                    // Fedora/RHEL
-	"/Applications/LibreOffice.app/Contents/Frameworks", // macOS .app bundle
-}
-
-// resolveLOPath returns explicit if non-empty (verifying it is a
-// directory), otherwise the first existing directory in candidates.
-// Identical contract to lokconv's same-named helper.
-func resolveLOPath(explicit string, candidates []string) (string, error) {
-	if explicit != "" {
-		st, err := os.Stat(explicit)
-		if err != nil {
-			return "", fmt.Errorf("lo-path %q: %w", explicit, err)
-		}
-		if !st.IsDir() {
-			return "", fmt.Errorf("lo-path %q is not a directory", explicit)
-		}
-		return explicit, nil
-	}
-	for _, c := range candidates {
-		if st, err := os.Stat(c); err == nil && st.IsDir() {
-			return c, nil
-		}
-	}
-	return "", errors.New("LibreOffice install not found; pass -lo-path or set $LOK_PATH")
 }

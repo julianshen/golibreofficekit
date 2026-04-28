@@ -32,6 +32,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/julianshen/golibreofficekit/internal/cli"
 	"github.com/julianshen/golibreofficekit/lok"
 )
 
@@ -47,13 +48,13 @@ func main() {
 		os.Exit(2)
 	}
 
-	resolved, err := resolveLOPath(*loPath, defaultLOPathCandidates)
+	resolved, err := cli.ResolveLOPath(*loPath, cli.DefaultLOPathCandidates)
 	if err != nil {
-		die("%v", err)
+		cli.Die("lokmd", "%v", err)
 	}
 
 	if err := convert(resolved, *in, *out); err != nil {
-		die("%v", err)
+		cli.Die("lokmd", "%v", err)
 	}
 }
 
@@ -179,9 +180,4 @@ func displayFormat(path string, f docFormat) string {
 		return ext
 	}
 	return "(no extension)"
-}
-
-func die(format string, args ...any) {
-	fmt.Fprintln(os.Stderr, "lokmd: "+fmt.Sprintf(format, args...))
-	os.Exit(1)
 }

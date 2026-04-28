@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/xml"
+	"strconv"
 	"strings"
 )
 
@@ -159,7 +160,7 @@ func slidePageName(idx int, s slide) string {
 	if s.title != "" {
 		return s.title
 	}
-	return "Slide " + itoaOneBased(idx)
+	return "Slide " + strconv.Itoa(idx+1)
 }
 
 // splitBodyParagraphs turns a slide body into the paragraphs we want
@@ -212,21 +213,4 @@ func splitBulletLines(block string) []string {
 		}
 	}
 	return out
-}
-
-// itoaOneBased formats idx+1 without pulling in strconv just for
-// this single use. (idx is small — O(slides) in the document.)
-func itoaOneBased(idx int) string {
-	n := idx + 1
-	if n == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = '0' + byte(n%10)
-		n /= 10
-	}
-	return string(buf[i:])
 }

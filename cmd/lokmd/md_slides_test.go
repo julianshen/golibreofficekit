@@ -87,6 +87,14 @@ more
 	if got[0].title != "Slide 1" {
 		t.Errorf("front-matter not stripped: slide 0 title = %q", got[0].title)
 	}
+	// Body must not contain the directives — a regression that left
+	// the front-matter as raw text in slide 0 would otherwise pass
+	// the title check above.
+	for _, leak := range []string{"marp:", "theme:"} {
+		if strings.Contains(got[0].body, leak) {
+			t.Errorf("front-matter directive %q leaked into slide 0 body: %q", leak, got[0].body)
+		}
+	}
 }
 
 func TestParseMarkdownSlides_NoSeparatorYieldsSingleSlide(t *testing.T) {
