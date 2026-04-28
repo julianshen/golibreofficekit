@@ -15,13 +15,13 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/julianshen/golibreofficekit/internal/cli"
 	"github.com/julianshen/golibreofficekit/lok"
 )
 
@@ -32,15 +32,6 @@ const (
 	fmtPDF
 	fmtPNG
 )
-
-// defaultLOPathCandidates is the auto-detect list when neither
-// -lo-path nor $LOK_PATH is set. Order matters — the first existing
-// directory wins.
-var defaultLOPathCandidates = []string{
-	"/usr/lib/libreoffice/program",                      // Debian/Ubuntu (apt)
-	"/usr/lib64/libreoffice/program",                    // Fedora/RHEL
-	"/Applications/LibreOffice.app/Contents/Frameworks", // macOS .app bundle
-}
 
 func main() {
 	in := flag.String("in", "", "input document path (required)")
@@ -56,13 +47,13 @@ func main() {
 		os.Exit(2)
 	}
 
-	resolved, err := resolveLOPath(*loPath, defaultLOPathCandidates)
+	resolved, err := cli.ResolveLOPath(*loPath, cli.DefaultLOPathCandidates)
 	if err != nil {
-		die("%v", err)
+		cli.Die("lokconv", "%v", err)
 	}
 
 	if err := convert(resolved, *in, *out, *page, *dpi); err != nil {
-		die("%v", err)
+		cli.Die("lokconv", "%v", err)
 	}
 }
 
@@ -75,29 +66,6 @@ func outputFormatFromPath(path string) outFormat {
 		return fmtPNG
 	}
 	return fmtUnknown
-}
-
-// resolveLOPath returns explicit if non-empty (verifying it is a
-// directory), otherwise the first existing directory in candidates.
-// Returns an error if explicit is set but isn't a directory, or if
-// no candidate exists.
-func resolveLOPath(explicit string, candidates []string) (string, error) {
-	if explicit != "" {
-		st, err := os.Stat(explicit)
-		if err != nil {
-			return "", fmt.Errorf("lo-path %q: %w", explicit, err)
-		}
-		if !st.IsDir() {
-			return "", fmt.Errorf("lo-path %q is not a directory", explicit)
-		}
-		return explicit, nil
-	}
-	for _, c := range candidates {
-		if st, err := os.Stat(c); err == nil && st.IsDir() {
-			return c, nil
-		}
-	}
-	return "", errors.New("LibreOffice install not found; pass -lo-path or set $LOK_PATH")
 }
 
 // convert opens LO at loPath, loads inPath, and writes PDF or PNG to
@@ -153,9 +121,4 @@ func convert(loPath, inPath, outPath string, page int, dpiScale float64) error {
 		return nil
 	}
 	return fmt.Errorf("unreachable: format=%d", format)
-}
-
-func die(format string, args ...any) {
-	fmt.Fprintln(os.Stderr, "lokconv: "+fmt.Sprintf(format, args...))
-	os.Exit(1)
 }
