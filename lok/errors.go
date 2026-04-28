@@ -44,3 +44,20 @@ func (e *LOKError) Unwrap() error { return e.err }
 func wrapErr(op string, err error) error {
 	return &LOKError{Op: op, Detail: err.Error(), err: err}
 }
+
+// wrapLOErr builds an *LOKError that prefers LibreOffice's own error
+// string (read via the backend's OfficeGetError) as Detail, falling
+// back to the underlying error's message when LO has nothing pending.
+// The original err is preserved in the wrap chain so errors.Is /
+// errors.As keep working.
+//
+// Callers must hold o.mu (the same critical section that performed the
+// failing operation) so the OfficeGetError read sees the error LO
+// stashed for THIS call, not one from a concurrent operation.
+func wrapLOErr(op string, o *Office, err error) error {
+	detail := o.be.OfficeGetError(o.h)
+	if detail == "" {
+		detail = err.Error()
+	}
+	return &LOKError{Op: op, Detail: detail, err: err}
+}

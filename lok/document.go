@@ -187,7 +187,7 @@ func (o *Office) Load(path string, opts ...LoadOption) (*Document, error) {
 		h, err = o.be.DocumentLoad(o.h, fileURL)
 	}
 	if err != nil {
-		return nil, err
+		return nil, wrapLOErr("Load", o, err)
 	}
 
 	d := &Document{

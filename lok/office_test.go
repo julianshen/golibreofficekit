@@ -24,6 +24,11 @@ type fakeBackend struct {
 	version  string
 	destroys int
 
+	// officeError is what OfficeGetError returns. Tests that exercise
+	// the load/save error-detail wiring populate this with a known
+	// LO-side message.
+	officeError string
+
 	// Captured call arguments. Not mutex-guarded because
 	// withFakeBackend forbids t.Parallel().
 	lastAuthor      string
@@ -209,7 +214,7 @@ func (f *fakeBackend) InvokeHook(lib libraryHandle, _ string) (officeHandle, err
 	}
 	return &fakeOffice{be: f}, nil
 }
-func (f *fakeBackend) OfficeGetError(officeHandle) string             { return "" }
+func (f *fakeBackend) OfficeGetError(officeHandle) string             { return f.officeError }
 func (f *fakeBackend) OfficeGetVersionInfo(officeHandle) string       { return f.version }
 func (f *fakeBackend) OfficeSetOptionalFeatures(officeHandle, uint64) {}
 func (f *fakeBackend) OfficeSetAuthor(_ officeHandle, s string)       { f.lastAuthor = s }

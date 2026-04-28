@@ -204,6 +204,60 @@ func TestLoad_BackendError(t *testing.T) {
 	}
 }
 
+// TestLoad_SurfacesLOErrorDetail asserts that when DocumentLoad fails
+// AND LibreOffice has a pending error string, Office.Load returns a
+// *LOKError whose Detail is the LO-supplied diagnostic — not the
+// internal-sentinel message. This is the user-visible bit that tells
+// callers WHY a load failed (password required, filter rejected, etc.).
+func TestLoad_SurfacesLOErrorDetail(t *testing.T) {
+	fb := &fakeBackend{
+		loadErr:     errors.New("synthetic load failure"),
+		officeError: "password required",
+	}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+
+	_, err := o.Load("/tmp/x.odt")
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) {
+		t.Fatalf("Load: want *LOKError, got %T %v", err, err)
+	}
+	if lokErr.Op != "Load" {
+		t.Errorf("Op=%q, want Load", lokErr.Op)
+	}
+	if lokErr.Detail != "password required" {
+		t.Errorf("Detail=%q, want %q", lokErr.Detail, "password required")
+	}
+}
+
+// TestLoad_FallsBackToBackendErrorWhenNoLODetail confirms the
+// fallback: when LO has nothing pending in getError, the *LOKError
+// still surfaces a useful message rather than dropping the cause.
+func TestLoad_FallsBackToBackendErrorWhenNoLODetail(t *testing.T) {
+	synth := errors.New("synthetic load failure")
+	fb := &fakeBackend{loadErr: synth, officeError: ""}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+
+	_, err := o.Load("/tmp/x.odt")
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) {
+		t.Fatalf("Load: want *LOKError, got %T %v", err, err)
+	}
+	if lokErr.Op != "Load" {
+		t.Errorf("Op=%q, want Load", lokErr.Op)
+	}
+	if lokErr.Detail == "" {
+		t.Error("Detail empty; want fallback message including the backend error")
+	}
+	// Original error must still be reachable for errors.Is.
+	if !errors.Is(err, synth) {
+		t.Errorf("errors.Is(synth) failed; chain lost the cause: %v", err)
+	}
+}
+
 func TestLoad_InvalidLanguageOption(t *testing.T) {
 	withFakeBackend(t, &fakeBackend{})
 	o, _ := New("/install")
