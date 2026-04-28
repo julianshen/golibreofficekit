@@ -186,17 +186,17 @@ func (realBackend) DocumentSetOutlineState(d documentHandle, column bool, level,
 	return mapLokErr(lokc.DocumentSetOutlineState(mustDoc(d).d, column, level, index, hidden))
 }
 
-func (realBackend) DocumentInitializeForRendering(d documentHandle, args string) {
-	lokc.DocumentInitializeForRendering(mustDoc(d).d, args)
+func (realBackend) DocumentInitializeForRendering(d documentHandle, args string) error {
+	return mapLokErr(lokc.DocumentInitializeForRendering(mustDoc(d).d, args))
 }
 func (realBackend) DocumentGetTileMode(d documentHandle) int {
 	return lokc.DocumentGetTileMode(mustDoc(d).d)
 }
-func (realBackend) DocumentSetClientZoom(d documentHandle, tpw, tph, ttw, tth int) {
-	lokc.DocumentSetClientZoom(mustDoc(d).d, tpw, tph, ttw, tth)
+func (realBackend) DocumentSetClientZoom(d documentHandle, tpw, tph, ttw, tth int) error {
+	return mapLokErr(lokc.DocumentSetClientZoom(mustDoc(d).d, tpw, tph, ttw, tth))
 }
-func (realBackend) DocumentSetClientVisibleArea(d documentHandle, x, y, w, h int) {
-	lokc.DocumentSetClientVisibleArea(mustDoc(d).d, x, y, w, h)
+func (realBackend) DocumentSetClientVisibleArea(d documentHandle, x, y, w, h int) error {
+	return mapLokErr(lokc.DocumentSetClientVisibleArea(mustDoc(d).d, x, y, w, h))
 }
 func (realBackend) DocumentPaintTile(d documentHandle, buf []byte, pxW, pxH, x, y, w, h int) {
 	lokc.DocumentPaintTile(mustDoc(d).d, buf, pxW, pxH, x, y, w, h)

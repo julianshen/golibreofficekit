@@ -53,6 +53,45 @@ func TestInitializeForRendering_UnexpectedTileMode(t *testing.T) {
 	}
 }
 
+// PR B (vtable-detect): when the underlying LOK initializeForRendering
+// vtable slot is NULL, the public method must surface ErrUnsupported
+// directly — NOT fall through to the tile-mode check and surface
+// "unsupported tile mode 0", which was the audit-flagged bad UX.
+func TestInitializeForRendering_PropagatesUnsupported(t *testing.T) {
+	fb := &fakeBackend{
+		initializeForRenderingErr: ErrUnsupported,
+		// tileMode left at default 0; the test asserts we do NOT
+		// surface "unsupported tile mode 0" — we should bail out
+		// of InitializeForRendering before that check runs.
+	}
+	_, doc := loadFakeDoc(t, fb)
+	err := doc.InitializeForRendering("")
+	if !errors.Is(err, ErrUnsupported) {
+		t.Errorf("InitializeForRendering: err=%v, want ErrUnsupported", err)
+	}
+	// And we must not have fallen through to the tile-mode error.
+	var lokErr *LOKError
+	if errors.As(err, &lokErr) && lokErr.Op == "InitializeForRendering" {
+		t.Errorf("InitializeForRendering wrongly surfaced tile-mode error: %v", lokErr)
+	}
+}
+
+func TestSetClientZoom_PropagatesUnsupported(t *testing.T) {
+	fb := &fakeBackend{setClientZoomErr: ErrUnsupported}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.SetClientZoom(1, 1, 1, 1); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("SetClientZoom: err=%v, want ErrUnsupported", err)
+	}
+}
+
+func TestSetClientVisibleArea_PropagatesUnsupported(t *testing.T) {
+	fb := &fakeBackend{setClientVisibleAreaErr: ErrUnsupported}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.SetClientVisibleArea(TwipRect{}); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("SetClientVisibleArea: err=%v, want ErrUnsupported", err)
+	}
+}
+
 func TestInitializeForRendering_AfterCloseErrors(t *testing.T) {
 	_, doc := loadFakeDoc(t, &fakeBackend{tileMode: 1})
 	doc.Close()

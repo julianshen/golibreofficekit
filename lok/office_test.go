@@ -114,9 +114,12 @@ type fakeBackend struct {
 	setViewReadOnlyErr       error
 	setAccessibilityStateErr error
 	setViewTimezoneErr       error
-	setPartErr               error
-	setPartModeErr           error
-	setOutlineStateErr       error
+	setPartErr                error
+	setPartModeErr            error
+	setOutlineStateErr        error
+	initializeForRenderingErr error
+	setClientZoomErr          error
+	setClientVisibleAreaErr   error
 
 	lastGetTextSelectionMime     string
 	lastSelectionTypeAndTextMime string
@@ -632,15 +635,18 @@ func (f *fakeBackend) DocumentSetOutlineState(_ documentHandle, column bool, lev
 	return f.setOutlineStateErr
 }
 
-func (f *fakeBackend) DocumentInitializeForRendering(_ documentHandle, args string) {
+func (f *fakeBackend) DocumentInitializeForRendering(_ documentHandle, args string) error {
 	f.lastInitArgs = args
+	return f.initializeForRenderingErr
 }
 func (f *fakeBackend) DocumentGetTileMode(documentHandle) int { return f.tileMode }
-func (f *fakeBackend) DocumentSetClientZoom(_ documentHandle, tpw, tph, ttw, tth int) {
+func (f *fakeBackend) DocumentSetClientZoom(_ documentHandle, tpw, tph, ttw, tth int) error {
 	f.lastZoom = [4]int{tpw, tph, ttw, tth}
+	return f.setClientZoomErr
 }
-func (f *fakeBackend) DocumentSetClientVisibleArea(_ documentHandle, x, y, w, h int) {
+func (f *fakeBackend) DocumentSetClientVisibleArea(_ documentHandle, x, y, w, h int) error {
 	f.lastVisibleArea = [4]int{x, y, w, h}
+	return f.setClientVisibleAreaErr
 }
 func (f *fakeBackend) DocumentPaintTile(_ documentHandle, buf []byte, pxW, pxH, x, y, w, h int) {
 	f.paintCalls = append(f.paintCalls, fakePaint{pxW: pxW, pxH: pxH, x: x, y: y, w: w, h: h, bufLen: len(buf)})

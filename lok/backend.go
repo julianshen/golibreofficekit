@@ -45,10 +45,10 @@ type backend interface {
 	DocumentGetDocumentSize(d documentHandle) (int64, int64)
 	DocumentSetOutlineState(d documentHandle, column bool, level, index int, hidden bool) error
 
-	DocumentInitializeForRendering(d documentHandle, args string)
+	DocumentInitializeForRendering(d documentHandle, args string) error
 	DocumentGetTileMode(d documentHandle) int
-	DocumentSetClientZoom(d documentHandle, tilePxW, tilePxH, tileTwipW, tileTwipH int)
-	DocumentSetClientVisibleArea(d documentHandle, x, y, w, h int)
+	DocumentSetClientZoom(d documentHandle, tilePxW, tilePxH, tileTwipW, tileTwipH int) error
+	DocumentSetClientVisibleArea(d documentHandle, x, y, w, h int) error
 	DocumentPaintTile(d documentHandle, buf []byte, pxW, pxH, x, y, w, h int)
 	DocumentPaintPartTile(d documentHandle, buf []byte, part, mode, pxW, pxH, x, y, w, h int)
 	DocumentRenderSearchResult(d documentHandle, query string) (buf []byte, pxW, pxH int, ok bool)

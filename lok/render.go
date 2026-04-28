@@ -18,13 +18,21 @@ const lokTileModeBGRA = 1
 // an opaque JSON hint string passed through to LOK (empty is valid).
 // Must be called before any Paint* or Render* method; subsequent
 // paints use the cached tile-mode check.
+//
+// Returns ErrUnsupported when the LOK build does not expose
+// initializeForRendering (vtable slot NULL). Previously a missing slot
+// silently no-opped, then getTileMode returned its sentinel 0, and
+// the caller saw the misleading "unsupported tile mode 0" — this now
+// surfaces as a proper ErrUnsupported.
 func (d *Document) InitializeForRendering(args string) error {
 	unlock, err := d.guard()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentInitializeForRendering(d.h, args)
+	if err := d.office.be.DocumentInitializeForRendering(d.h, args); err != nil {
+		return err
+	}
 	mode := d.office.be.DocumentGetTileMode(d.h)
 	if mode != lokTileModeBGRA {
 		return &LOKError{Op: "InitializeForRendering", Detail: fmt.Sprintf("unsupported tile mode %d (binding requires LOK_TILEMODE_BGRA)", mode)}
@@ -33,23 +41,25 @@ func (d *Document) InitializeForRendering(args string) error {
 	return nil
 }
 
-// SetClientZoom tells LOK the caller's render scale. Fire-and-forget;
-// a nil return does not confirm LOK applied the values. Does NOT
-// require a prior InitializeForRendering — zoom is a cache hint.
+// SetClientZoom tells LOK the caller's render scale. Returns
+// ErrUnsupported when the LOK build does not expose setClientZoom
+// (vtable slot NULL). Does NOT require a prior InitializeForRendering
+// — zoom is a cache hint.
 func (d *Document) SetClientZoom(tilePxW, tilePxH, tileTwipW, tileTwipH int) error {
 	unlock, err := d.guard()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentSetClientZoom(d.h, tilePxW, tilePxH, tileTwipW, tileTwipH)
-	return nil
+	return d.office.be.DocumentSetClientZoom(d.h, tilePxW, tilePxH, tileTwipW, tileTwipH)
 }
 
 // SetClientVisibleArea tells LOK the client's visible region in twips.
 // Helps LOK prefetch tiles; does NOT require InitializeForRendering.
 // Any field beyond math.MaxInt32 returns *LOKError — LOK's C ABI
-// takes int (32-bit) and we refuse to silently truncate.
+// takes int (32-bit) and we refuse to silently truncate. Returns
+// ErrUnsupported when the LOK build does not expose
+// setClientVisibleArea (vtable slot NULL).
 func (d *Document) SetClientVisibleArea(r TwipRect) error {
 	if err := requireInt32Rect("SetClientVisibleArea", r); err != nil {
 		return err
@@ -59,8 +69,7 @@ func (d *Document) SetClientVisibleArea(r TwipRect) error {
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentSetClientVisibleArea(d.h, int(r.X), int(r.Y), int(r.W), int(r.H))
-	return nil
+	return d.office.be.DocumentSetClientVisibleArea(d.h, int(r.X), int(r.Y), int(r.W), int(r.H))
 }
 
 // requireInt32Rect returns *LOKError if any rect field exceeds
