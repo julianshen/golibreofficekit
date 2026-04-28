@@ -24,39 +24,39 @@ type backend interface {
 
 	DocumentCreateView(d documentHandle) int
 	DocumentCreateViewWithOptions(d documentHandle, options string) int
-	DocumentDestroyView(d documentHandle, id int)
-	DocumentSetView(d documentHandle, id int)
+	DocumentDestroyView(d documentHandle, id int) error
+	DocumentSetView(d documentHandle, id int) error
 	DocumentGetView(d documentHandle) int
 	DocumentGetViewsCount(d documentHandle) int
 	DocumentGetViewIds(d documentHandle) (ids []int, ok bool)
-	DocumentSetViewLanguage(d documentHandle, id int, lang string)
-	DocumentSetViewReadOnly(d documentHandle, id int, readOnly bool)
-	DocumentSetAccessibilityState(d documentHandle, id int, enabled bool)
-	DocumentSetViewTimezone(d documentHandle, id int, tz string)
+	DocumentSetViewLanguage(d documentHandle, id int, lang string) error
+	DocumentSetViewReadOnly(d documentHandle, id int, readOnly bool) error
+	DocumentSetAccessibilityState(d documentHandle, id int, enabled bool) error
+	DocumentSetViewTimezone(d documentHandle, id int, tz string) error
 
 	DocumentGetParts(d documentHandle) int
 	DocumentGetPart(d documentHandle) int
-	DocumentSetPart(d documentHandle, n int)
-	DocumentSetPartMode(d documentHandle, mode int)
+	DocumentSetPart(d documentHandle, n int) error
+	DocumentSetPartMode(d documentHandle, mode int) error
 	DocumentGetPartName(d documentHandle, n int) string
 	DocumentGetPartHash(d documentHandle, n int) string
 	DocumentGetPartInfo(d documentHandle, n int) string
 	DocumentGetPartPageRectangles(d documentHandle) string
 	DocumentGetDocumentSize(d documentHandle) (int64, int64)
-	DocumentSetOutlineState(d documentHandle, column bool, level, index int, hidden bool)
+	DocumentSetOutlineState(d documentHandle, column bool, level, index int, hidden bool) error
 
-	DocumentInitializeForRendering(d documentHandle, args string)
+	DocumentInitializeForRendering(d documentHandle, args string) error
 	DocumentGetTileMode(d documentHandle) int
-	DocumentSetClientZoom(d documentHandle, tilePxW, tilePxH, tileTwipW, tileTwipH int)
-	DocumentSetClientVisibleArea(d documentHandle, x, y, w, h int)
+	DocumentSetClientZoom(d documentHandle, tilePxW, tilePxH, tileTwipW, tileTwipH int) error
+	DocumentSetClientVisibleArea(d documentHandle, x, y, w, h int) error
 	DocumentPaintTile(d documentHandle, buf []byte, pxW, pxH, x, y, w, h int)
 	DocumentPaintPartTile(d documentHandle, buf []byte, part, mode, pxW, pxH, x, y, w, h int)
 	DocumentRenderSearchResult(d documentHandle, query string) (buf []byte, pxW, pxH int, ok bool)
 	DocumentRenderShapeSelection(d documentHandle) []byte
 
-	DocumentPostKeyEvent(d documentHandle, typ, charCode, keyCode int)
-	DocumentPostMouseEvent(d documentHandle, typ, x, y, count, buttons, mods int)
-	DocumentPostUnoCommand(d documentHandle, cmd, args string, notifyWhenFinished bool)
+	DocumentPostKeyEvent(d documentHandle, typ, charCode, keyCode int) error
+	DocumentPostMouseEvent(d documentHandle, typ, x, y, count, buttons, mods int) error
+	DocumentPostUnoCommand(d documentHandle, cmd, args string, notifyWhenFinished bool) error
 
 	DocumentSetTextSelection(d documentHandle, typ, x, y int) error
 	DocumentResetSelection(d documentHandle) error

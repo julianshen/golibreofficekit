@@ -259,6 +259,35 @@ func TestPostUnoCommand_ForwardsNotifyTrue(t *testing.T) {
 	}
 }
 
+// TestInputSetters_PropagateUnsupported asserts every widened input
+// method forwards the backend ErrUnsupported untouched, so callers
+// on stripped LO builds (vtable slot NULL) see the unsupported
+// signal instead of silent success.
+func TestInputSetters_PropagateUnsupported(t *testing.T) {
+	cases := []struct {
+		name   string
+		inject func(*fakeBackend)
+		call   func(*Document) error
+	}{
+		{"PostKeyEvent", func(f *fakeBackend) { f.postKeyEventErr = ErrUnsupported },
+			func(d *Document) error { return d.PostKeyEvent(KeyEventInput, 'a', 0) }},
+		{"PostMouseEvent", func(f *fakeBackend) { f.postMouseEventErr = ErrUnsupported },
+			func(d *Document) error { return d.PostMouseEvent(MouseButtonDown, 0, 0, 1, MouseLeft, 0) }},
+		{"PostUnoCommand", func(f *fakeBackend) { f.postUnoCommandErr = ErrUnsupported },
+			func(d *Document) error { return d.PostUnoCommand(".uno:Bold", "", false) }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fb := &fakeBackend{}
+			tc.inject(fb)
+			_, doc := loadFakeDoc(t, fb)
+			if err := tc.call(doc); !errors.Is(err, ErrUnsupported) {
+				t.Errorf("err=%v, want ErrUnsupported", err)
+			}
+		})
+	}
+}
+
 func TestInputMethods_AfterCloseErrors(t *testing.T) {
 	cases := []struct {
 		name string

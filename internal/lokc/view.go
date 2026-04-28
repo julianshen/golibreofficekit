@@ -16,13 +16,18 @@ static int go_doc_create_view_with_options(LibreOfficeKitDocument* d, const char
     if (d == NULL || d->pClass == NULL || d->pClass->createViewWithOptions == NULL) return -1;
     return d->pClass->createViewWithOptions(d, opts);
 }
-static void go_doc_destroy_view(LibreOfficeKitDocument* d, int id) {
-    if (d == NULL || d->pClass == NULL || d->pClass->destroyView == NULL) return;
+// Setters return 1 on success, 0 when the vtable slot is NULL (caller
+// maps to ErrUnsupported). Mirrors the selection.go pattern; silent
+// no-ops are the audit-flagged defect we're fixing.
+static int go_doc_destroy_view(LibreOfficeKitDocument* d, int id) {
+    if (d == NULL || d->pClass == NULL || d->pClass->destroyView == NULL) return 0;
     d->pClass->destroyView(d, id);
+    return 1;
 }
-static void go_doc_set_view(LibreOfficeKitDocument* d, int id) {
-    if (d == NULL || d->pClass == NULL || d->pClass->setView == NULL) return;
+static int go_doc_set_view(LibreOfficeKitDocument* d, int id) {
+    if (d == NULL || d->pClass == NULL || d->pClass->setView == NULL) return 0;
     d->pClass->setView(d, id);
+    return 1;
 }
 static int go_doc_get_view(LibreOfficeKitDocument* d) {
     if (d == NULL || d->pClass == NULL || d->pClass->getView == NULL) return -1;
@@ -38,21 +43,25 @@ static bool go_doc_get_view_ids(LibreOfficeKitDocument* d, int* buf, size_t n) {
     if (d == NULL || d->pClass == NULL || d->pClass->getViewIds == NULL) return false;
     return d->pClass->getViewIds(d, buf, n);
 }
-static void go_doc_set_view_language(LibreOfficeKitDocument* d, int id, const char* lang) {
-    if (d == NULL || d->pClass == NULL || d->pClass->setViewLanguage == NULL) return;
+static int go_doc_set_view_language(LibreOfficeKitDocument* d, int id, const char* lang) {
+    if (d == NULL || d->pClass == NULL || d->pClass->setViewLanguage == NULL) return 0;
     d->pClass->setViewLanguage(d, id, lang);
+    return 1;
 }
-static void go_doc_set_view_read_only(LibreOfficeKitDocument* d, int id, bool ro) {
-    if (d == NULL || d->pClass == NULL || d->pClass->setViewReadOnly == NULL) return;
+static int go_doc_set_view_read_only(LibreOfficeKitDocument* d, int id, bool ro) {
+    if (d == NULL || d->pClass == NULL || d->pClass->setViewReadOnly == NULL) return 0;
     d->pClass->setViewReadOnly(d, id, ro);
+    return 1;
 }
-static void go_doc_set_accessibility_state(LibreOfficeKitDocument* d, int id, bool en) {
-    if (d == NULL || d->pClass == NULL || d->pClass->setAccessibilityState == NULL) return;
+static int go_doc_set_accessibility_state(LibreOfficeKitDocument* d, int id, bool en) {
+    if (d == NULL || d->pClass == NULL || d->pClass->setAccessibilityState == NULL) return 0;
     d->pClass->setAccessibilityState(d, id, en);
+    return 1;
 }
-static void go_doc_set_view_timezone(LibreOfficeKitDocument* d, int id, const char* tz) {
-    if (d == NULL || d->pClass == NULL || d->pClass->setViewTimezone == NULL) return;
+static int go_doc_set_view_timezone(LibreOfficeKitDocument* d, int id, const char* tz) {
+    if (d == NULL || d->pClass == NULL || d->pClass->setViewTimezone == NULL) return 0;
     d->pClass->setViewTimezone(d, id, tz);
+    return 1;
 }
 */
 import "C"
@@ -80,20 +89,28 @@ func DocumentCreateViewWithOptions(d DocumentHandle, options string) int {
 	return int(C.go_doc_create_view_with_options(d.p, copts))
 }
 
-// DocumentDestroyView is idempotent on a zero handle / missing vtable.
-func DocumentDestroyView(d DocumentHandle, id int) {
+// DocumentDestroyView destroys the view. Returns ErrUnsupported on a
+// zero handle or when the vtable slot is NULL.
+func DocumentDestroyView(d DocumentHandle, id int) error {
 	if !d.IsValid() {
-		return
+		return ErrUnsupported
 	}
-	C.go_doc_destroy_view(d.p, C.int(id))
+	if C.go_doc_destroy_view(d.p, C.int(id)) == 0 {
+		return ErrUnsupported
+	}
+	return nil
 }
 
-// DocumentSetView activates the given view on the document.
-func DocumentSetView(d DocumentHandle, id int) {
+// DocumentSetView activates the given view on the document. Returns
+// ErrUnsupported on a zero handle or when the vtable slot is NULL.
+func DocumentSetView(d DocumentHandle, id int) error {
 	if !d.IsValid() {
-		return
+		return ErrUnsupported
 	}
-	C.go_doc_set_view(d.p, C.int(id))
+	if C.go_doc_set_view(d.p, C.int(id)) == 0 {
+		return ErrUnsupported
+	}
+	return nil
 }
 
 // DocumentGetView returns the active view ID, or -1.
@@ -148,37 +165,57 @@ func DocumentGetViewIds(d DocumentHandle) ([]int, bool) {
 }
 
 // DocumentSetViewLanguage forwards to pClass->setViewLanguage.
-func DocumentSetViewLanguage(d DocumentHandle, id int, lang string) {
+// Returns ErrUnsupported on a zero handle or when the vtable slot
+// is NULL.
+func DocumentSetViewLanguage(d DocumentHandle, id int, lang string) error {
 	if !d.IsValid() {
-		return
+		return ErrUnsupported
 	}
 	c := C.CString(lang)
 	defer C.free(unsafe.Pointer(c))
-	C.go_doc_set_view_language(d.p, C.int(id), c)
+	if C.go_doc_set_view_language(d.p, C.int(id), c) == 0 {
+		return ErrUnsupported
+	}
+	return nil
 }
 
 // DocumentSetViewReadOnly forwards to pClass->setViewReadOnly.
-func DocumentSetViewReadOnly(d DocumentHandle, id int, readOnly bool) {
+// Returns ErrUnsupported on a zero handle or when the vtable slot
+// is NULL.
+func DocumentSetViewReadOnly(d DocumentHandle, id int, readOnly bool) error {
 	if !d.IsValid() {
-		return
+		return ErrUnsupported
 	}
-	C.go_doc_set_view_read_only(d.p, C.int(id), C.bool(readOnly))
+	if C.go_doc_set_view_read_only(d.p, C.int(id), C.bool(readOnly)) == 0 {
+		return ErrUnsupported
+	}
+	return nil
 }
 
 // DocumentSetAccessibilityState forwards to pClass->setAccessibilityState.
-func DocumentSetAccessibilityState(d DocumentHandle, id int, enabled bool) {
+// Returns ErrUnsupported on a zero handle or when the vtable slot is
+// NULL.
+func DocumentSetAccessibilityState(d DocumentHandle, id int, enabled bool) error {
 	if !d.IsValid() {
-		return
+		return ErrUnsupported
 	}
-	C.go_doc_set_accessibility_state(d.p, C.int(id), C.bool(enabled))
+	if C.go_doc_set_accessibility_state(d.p, C.int(id), C.bool(enabled)) == 0 {
+		return ErrUnsupported
+	}
+	return nil
 }
 
 // DocumentSetViewTimezone forwards to pClass->setViewTimezone.
-func DocumentSetViewTimezone(d DocumentHandle, id int, tz string) {
+// Returns ErrUnsupported on a zero handle or when the vtable slot is
+// NULL.
+func DocumentSetViewTimezone(d DocumentHandle, id int, tz string) error {
 	if !d.IsValid() {
-		return
+		return ErrUnsupported
 	}
 	c := C.CString(tz)
 	defer C.free(unsafe.Pointer(c))
-	C.go_doc_set_view_timezone(d.p, C.int(id), c)
+	if C.go_doc_set_view_timezone(d.p, C.int(id), c) == 0 {
+		return ErrUnsupported
+	}
+	return nil
 }

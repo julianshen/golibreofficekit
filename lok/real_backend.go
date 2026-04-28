@@ -127,11 +127,11 @@ func (realBackend) DocumentCreateView(d documentHandle) int {
 func (realBackend) DocumentCreateViewWithOptions(d documentHandle, options string) int {
 	return lokc.DocumentCreateViewWithOptions(mustDoc(d).d, options)
 }
-func (realBackend) DocumentDestroyView(d documentHandle, id int) {
-	lokc.DocumentDestroyView(mustDoc(d).d, id)
+func (realBackend) DocumentDestroyView(d documentHandle, id int) error {
+	return mapLokErr(lokc.DocumentDestroyView(mustDoc(d).d, id))
 }
-func (realBackend) DocumentSetView(d documentHandle, id int) {
-	lokc.DocumentSetView(mustDoc(d).d, id)
+func (realBackend) DocumentSetView(d documentHandle, id int) error {
+	return mapLokErr(lokc.DocumentSetView(mustDoc(d).d, id))
 }
 func (realBackend) DocumentGetView(d documentHandle) int {
 	return lokc.DocumentGetView(mustDoc(d).d)
@@ -142,17 +142,17 @@ func (realBackend) DocumentGetViewsCount(d documentHandle) int {
 func (realBackend) DocumentGetViewIds(d documentHandle) ([]int, bool) {
 	return lokc.DocumentGetViewIds(mustDoc(d).d)
 }
-func (realBackend) DocumentSetViewLanguage(d documentHandle, id int, lang string) {
-	lokc.DocumentSetViewLanguage(mustDoc(d).d, id, lang)
+func (realBackend) DocumentSetViewLanguage(d documentHandle, id int, lang string) error {
+	return mapLokErr(lokc.DocumentSetViewLanguage(mustDoc(d).d, id, lang))
 }
-func (realBackend) DocumentSetViewReadOnly(d documentHandle, id int, readOnly bool) {
-	lokc.DocumentSetViewReadOnly(mustDoc(d).d, id, readOnly)
+func (realBackend) DocumentSetViewReadOnly(d documentHandle, id int, readOnly bool) error {
+	return mapLokErr(lokc.DocumentSetViewReadOnly(mustDoc(d).d, id, readOnly))
 }
-func (realBackend) DocumentSetAccessibilityState(d documentHandle, id int, enabled bool) {
-	lokc.DocumentSetAccessibilityState(mustDoc(d).d, id, enabled)
+func (realBackend) DocumentSetAccessibilityState(d documentHandle, id int, enabled bool) error {
+	return mapLokErr(lokc.DocumentSetAccessibilityState(mustDoc(d).d, id, enabled))
 }
-func (realBackend) DocumentSetViewTimezone(d documentHandle, id int, tz string) {
-	lokc.DocumentSetViewTimezone(mustDoc(d).d, id, tz)
+func (realBackend) DocumentSetViewTimezone(d documentHandle, id int, tz string) error {
+	return mapLokErr(lokc.DocumentSetViewTimezone(mustDoc(d).d, id, tz))
 }
 
 func (realBackend) DocumentGetParts(d documentHandle) int {
@@ -161,11 +161,11 @@ func (realBackend) DocumentGetParts(d documentHandle) int {
 func (realBackend) DocumentGetPart(d documentHandle) int {
 	return lokc.DocumentGetPart(mustDoc(d).d)
 }
-func (realBackend) DocumentSetPart(d documentHandle, n int) {
-	lokc.DocumentSetPart(mustDoc(d).d, n)
+func (realBackend) DocumentSetPart(d documentHandle, n int) error {
+	return mapLokErr(lokc.DocumentSetPart(mustDoc(d).d, n))
 }
-func (realBackend) DocumentSetPartMode(d documentHandle, mode int) {
-	lokc.DocumentSetPartMode(mustDoc(d).d, mode)
+func (realBackend) DocumentSetPartMode(d documentHandle, mode int) error {
+	return mapLokErr(lokc.DocumentSetPartMode(mustDoc(d).d, mode))
 }
 func (realBackend) DocumentGetPartName(d documentHandle, n int) string {
 	return lokc.DocumentGetPartName(mustDoc(d).d, n)
@@ -182,21 +182,21 @@ func (realBackend) DocumentGetPartPageRectangles(d documentHandle) string {
 func (realBackend) DocumentGetDocumentSize(d documentHandle) (int64, int64) {
 	return lokc.DocumentGetDocumentSize(mustDoc(d).d)
 }
-func (realBackend) DocumentSetOutlineState(d documentHandle, column bool, level, index int, hidden bool) {
-	lokc.DocumentSetOutlineState(mustDoc(d).d, column, level, index, hidden)
+func (realBackend) DocumentSetOutlineState(d documentHandle, column bool, level, index int, hidden bool) error {
+	return mapLokErr(lokc.DocumentSetOutlineState(mustDoc(d).d, column, level, index, hidden))
 }
 
-func (realBackend) DocumentInitializeForRendering(d documentHandle, args string) {
-	lokc.DocumentInitializeForRendering(mustDoc(d).d, args)
+func (realBackend) DocumentInitializeForRendering(d documentHandle, args string) error {
+	return mapLokErr(lokc.DocumentInitializeForRendering(mustDoc(d).d, args))
 }
 func (realBackend) DocumentGetTileMode(d documentHandle) int {
 	return lokc.DocumentGetTileMode(mustDoc(d).d)
 }
-func (realBackend) DocumentSetClientZoom(d documentHandle, tpw, tph, ttw, tth int) {
-	lokc.DocumentSetClientZoom(mustDoc(d).d, tpw, tph, ttw, tth)
+func (realBackend) DocumentSetClientZoom(d documentHandle, tpw, tph, ttw, tth int) error {
+	return mapLokErr(lokc.DocumentSetClientZoom(mustDoc(d).d, tpw, tph, ttw, tth))
 }
-func (realBackend) DocumentSetClientVisibleArea(d documentHandle, x, y, w, h int) {
-	lokc.DocumentSetClientVisibleArea(mustDoc(d).d, x, y, w, h)
+func (realBackend) DocumentSetClientVisibleArea(d documentHandle, x, y, w, h int) error {
+	return mapLokErr(lokc.DocumentSetClientVisibleArea(mustDoc(d).d, x, y, w, h))
 }
 func (realBackend) DocumentPaintTile(d documentHandle, buf []byte, pxW, pxH, x, y, w, h int) {
 	lokc.DocumentPaintTile(mustDoc(d).d, buf, pxW, pxH, x, y, w, h)
@@ -211,14 +211,14 @@ func (realBackend) DocumentRenderShapeSelection(d documentHandle) []byte {
 	return lokc.DocumentRenderShapeSelection(mustDoc(d).d)
 }
 
-func (realBackend) DocumentPostKeyEvent(d documentHandle, typ, charCode, keyCode int) {
-	lokc.DocumentPostKeyEvent(mustDoc(d).d, typ, charCode, keyCode)
+func (realBackend) DocumentPostKeyEvent(d documentHandle, typ, charCode, keyCode int) error {
+	return mapLokErr(lokc.DocumentPostKeyEvent(mustDoc(d).d, typ, charCode, keyCode))
 }
-func (realBackend) DocumentPostMouseEvent(d documentHandle, typ, x, y, count, buttons, mods int) {
-	lokc.DocumentPostMouseEvent(mustDoc(d).d, typ, x, y, count, buttons, mods)
+func (realBackend) DocumentPostMouseEvent(d documentHandle, typ, x, y, count, buttons, mods int) error {
+	return mapLokErr(lokc.DocumentPostMouseEvent(mustDoc(d).d, typ, x, y, count, buttons, mods))
 }
-func (realBackend) DocumentPostUnoCommand(d documentHandle, cmd, args string, notifyWhenFinished bool) {
-	lokc.DocumentPostUnoCommand(mustDoc(d).d, cmd, args, notifyWhenFinished)
+func (realBackend) DocumentPostUnoCommand(d documentHandle, cmd, args string, notifyWhenFinished bool) error {
+	return mapLokErr(lokc.DocumentPostUnoCommand(mustDoc(d).d, cmd, args, notifyWhenFinished))
 }
 
 // mapLokErr translates internal lokc sentinels to their public lok

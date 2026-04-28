@@ -107,6 +107,25 @@ type fakeBackend struct {
 	lastUnoArgs     string
 	lastUnoNotify   bool
 
+	// Vtable-detect injection points (PR B): fakes assert that the
+	// public lok methods propagate the lokc error untouched. Default
+	// nil so existing tests stay unaffected.
+	postKeyEventErr           error
+	postMouseEventErr         error
+	postUnoCommandErr         error
+	destroyViewErr            error
+	setViewErr                error
+	setViewLanguageErr        error
+	setViewReadOnlyErr        error
+	setAccessibilityStateErr  error
+	setViewTimezoneErr        error
+	setPartErr                error
+	setPartModeErr            error
+	setOutlineStateErr        error
+	initializeForRenderingErr error
+	setClientZoomErr          error
+	setClientVisibleAreaErr   error
+
 	lastGetTextSelectionMime     string
 	lastSelectionTypeAndTextMime string
 	selectionText                string
@@ -290,7 +309,7 @@ func (f *fakeBackend) DocumentCreateViewWithOptions(d documentHandle, opts strin
 	return f.DocumentCreateView(d)
 }
 
-func (f *fakeBackend) DocumentDestroyView(_ documentHandle, id int) {
+func (f *fakeBackend) DocumentDestroyView(_ documentHandle, id int) error {
 	for i, v := range f.viewsLive {
 		if v == id {
 			f.viewsLive = append(f.viewsLive[:i], f.viewsLive[i+1:]...)
@@ -307,16 +326,18 @@ func (f *fakeBackend) DocumentDestroyView(_ documentHandle, id int) {
 	} else if f.viewActive == id {
 		f.viewActive = -1
 	}
+	return f.destroyViewErr
 }
 
 // DocumentSetView silently ignores an unknown ID — matching real LOK
 // which returns void and gives no failure signal, but constraining
 // the fake to live IDs catches "destroyed-view regressions" in
 // tests before the ID escapes into getView().
-func (f *fakeBackend) DocumentSetView(_ documentHandle, id int) {
+func (f *fakeBackend) DocumentSetView(_ documentHandle, id int) error {
 	if slices.Contains(f.viewsLive, id) {
 		f.viewActive = id
 	}
+	return f.setViewErr
 }
 
 // DocumentGetView returns -1 when no views are live rather than the
@@ -340,21 +361,25 @@ func (f *fakeBackend) DocumentGetViewIds(documentHandle) ([]int, bool) {
 	return out, true
 }
 
-func (f *fakeBackend) DocumentSetViewLanguage(_ documentHandle, id int, lang string) {
+func (f *fakeBackend) DocumentSetViewLanguage(_ documentHandle, id int, lang string) error {
 	f.lastViewLangID = id
 	f.lastViewLang = lang
+	return f.setViewLanguageErr
 }
 
-func (f *fakeBackend) DocumentSetViewReadOnly(_ documentHandle, _ int, ro bool) {
+func (f *fakeBackend) DocumentSetViewReadOnly(_ documentHandle, _ int, ro bool) error {
 	f.lastViewReadOnly = ro
+	return f.setViewReadOnlyErr
 }
 
-func (f *fakeBackend) DocumentSetAccessibilityState(_ documentHandle, _ int, en bool) {
+func (f *fakeBackend) DocumentSetAccessibilityState(_ documentHandle, _ int, en bool) error {
 	f.lastViewA11y = en
+	return f.setAccessibilityStateErr
 }
 
-func (f *fakeBackend) DocumentSetViewTimezone(_ documentHandle, _ int, tz string) {
+func (f *fakeBackend) DocumentSetViewTimezone(_ documentHandle, _ int, tz string) error {
 	f.lastViewTimezone = tz
+	return f.setViewTimezoneErr
 }
 
 // withFakeBackend swaps the package-level backend + singleton. It
@@ -577,14 +602,16 @@ func TestRemainingMethods_AfterCloseErrors(t *testing.T) {
 func (f *fakeBackend) DocumentGetParts(documentHandle) int { return f.partsCount }
 func (f *fakeBackend) DocumentGetPart(documentHandle) int  { return f.partActive }
 
-func (f *fakeBackend) DocumentSetPart(_ documentHandle, n int) {
+func (f *fakeBackend) DocumentSetPart(_ documentHandle, n int) error {
 	if n >= 0 && n < f.partsCount {
 		f.partActive = n
 	}
+	return f.setPartErr
 }
 
-func (f *fakeBackend) DocumentSetPartMode(_ documentHandle, mode int) {
+func (f *fakeBackend) DocumentSetPartMode(_ documentHandle, mode int) error {
 	f.lastPartMode = mode
+	return f.setPartModeErr
 }
 
 func (f *fakeBackend) DocumentGetPartName(_ documentHandle, n int) string {
@@ -607,22 +634,26 @@ func (f *fakeBackend) DocumentGetDocumentSize(documentHandle) (int64, int64) {
 	return f.docWidthTwips, f.docHeightTwips
 }
 
-func (f *fakeBackend) DocumentSetOutlineState(_ documentHandle, column bool, level, index int, hidden bool) {
+func (f *fakeBackend) DocumentSetOutlineState(_ documentHandle, column bool, level, index int, hidden bool) error {
 	f.lastOutlineCol = column
 	f.lastOutlineLevel = level
 	f.lastOutlineIndex = index
 	f.lastOutlineHidden = hidden
+	return f.setOutlineStateErr
 }
 
-func (f *fakeBackend) DocumentInitializeForRendering(_ documentHandle, args string) {
+func (f *fakeBackend) DocumentInitializeForRendering(_ documentHandle, args string) error {
 	f.lastInitArgs = args
+	return f.initializeForRenderingErr
 }
 func (f *fakeBackend) DocumentGetTileMode(documentHandle) int { return f.tileMode }
-func (f *fakeBackend) DocumentSetClientZoom(_ documentHandle, tpw, tph, ttw, tth int) {
+func (f *fakeBackend) DocumentSetClientZoom(_ documentHandle, tpw, tph, ttw, tth int) error {
 	f.lastZoom = [4]int{tpw, tph, ttw, tth}
+	return f.setClientZoomErr
 }
-func (f *fakeBackend) DocumentSetClientVisibleArea(_ documentHandle, x, y, w, h int) {
+func (f *fakeBackend) DocumentSetClientVisibleArea(_ documentHandle, x, y, w, h int) error {
 	f.lastVisibleArea = [4]int{x, y, w, h}
+	return f.setClientVisibleAreaErr
 }
 func (f *fakeBackend) DocumentPaintTile(_ documentHandle, buf []byte, pxW, pxH, x, y, w, h int) {
 	f.paintCalls = append(f.paintCalls, fakePaint{pxW: pxW, pxH: pxH, x: x, y: y, w: w, h: h, bufLen: len(buf)})
@@ -640,23 +671,26 @@ func (f *fakeBackend) DocumentRenderShapeSelection(documentHandle) []byte {
 	return f.shapeSelection
 }
 
-func (f *fakeBackend) DocumentPostKeyEvent(_ documentHandle, typ, charCode, keyCode int) {
+func (f *fakeBackend) DocumentPostKeyEvent(_ documentHandle, typ, charCode, keyCode int) error {
 	f.lastKeyType = typ
 	f.lastCharCode = charCode
 	f.lastKeyCode = keyCode
+	return f.postKeyEventErr
 }
-func (f *fakeBackend) DocumentPostMouseEvent(_ documentHandle, typ, x, y, count, buttons, mods int) {
+func (f *fakeBackend) DocumentPostMouseEvent(_ documentHandle, typ, x, y, count, buttons, mods int) error {
 	f.lastMouseType = typ
 	f.lastMouseX = x
 	f.lastMouseY = y
 	f.lastMouseCount = count
 	f.lastMouseButton = buttons
 	f.lastMouseMods = mods
+	return f.postMouseEventErr
 }
-func (f *fakeBackend) DocumentPostUnoCommand(_ documentHandle, cmd, args string, notify bool) {
+func (f *fakeBackend) DocumentPostUnoCommand(_ documentHandle, cmd, args string, notify bool) error {
 	f.lastUnoCmd = cmd
 	f.lastUnoArgs = args
 	f.lastUnoNotify = notify
+	return f.postUnoCommandErr
 }
 
 func (f *fakeBackend) DocumentSetTextSelection(_ documentHandle, typ, x, y int) error {

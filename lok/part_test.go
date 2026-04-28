@@ -218,6 +218,35 @@ func TestSetOutlineState_PassesParams(t *testing.T) {
 	}
 }
 
+// TestPartSetters_PropagateUnsupported asserts every widened part
+// method forwards the backend ErrUnsupported untouched, so callers
+// on stripped LO builds (vtable slot NULL) see the unsupported
+// signal instead of silent success.
+func TestPartSetters_PropagateUnsupported(t *testing.T) {
+	cases := []struct {
+		name   string
+		inject func(*fakeBackend)
+		call   func(*Document) error
+	}{
+		{"SetPart", func(f *fakeBackend) { f.setPartErr = ErrUnsupported },
+			func(d *Document) error { return d.SetPart(0) }},
+		{"SetPartMode", func(f *fakeBackend) { f.setPartModeErr = ErrUnsupported },
+			func(d *Document) error { return d.SetPartMode(0) }},
+		{"SetOutlineState", func(f *fakeBackend) { f.setOutlineStateErr = ErrUnsupported },
+			func(d *Document) error { return d.SetOutlineState(false, 0, 0, false) }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fb := &fakeBackend{}
+			tc.inject(fb)
+			_, doc := loadFakeDoc(t, fb)
+			if err := tc.call(doc); !errors.Is(err, ErrUnsupported) {
+				t.Errorf("err=%v, want ErrUnsupported", err)
+			}
+		})
+	}
+}
+
 func TestPartMethods_AfterCloseErrors(t *testing.T) {
 	cases := []struct {
 		name string

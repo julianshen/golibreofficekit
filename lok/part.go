@@ -42,31 +42,31 @@ func (d *Document) Part() (int, error) {
 	return n, nil
 }
 
-// SetPart activates the part at index n. Fire-and-forget at the LOK
-// level (the underlying API is void), so a nil return only means no
-// ErrClosed occurred — it does not confirm LOK accepted n.
+// SetPart activates the part at index n. The underlying LOK call is
+// void, so a nil return does not confirm LOK accepted n — but a NULL
+// vtable slot now surfaces as ErrUnsupported instead of being a silent
+// no-op.
 func (d *Document) SetPart(n int) error {
 	unlock, err := d.guard()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentSetPart(d.h, n)
-	return nil
+	return d.office.be.DocumentSetPart(d.h, n)
 }
 
 // SetPartMode switches the part-mode (Calc's "view" mode, etc.).
 // Values are the LOK_PARTMODE_* enums from LibreOfficeKitEnums.h.
-// Fire-and-forget at the LOK level; a nil return does not confirm
-// the mode actually changed.
+// The underlying LOK call is void; a nil return does not confirm the
+// mode actually changed but a NULL vtable slot now surfaces as
+// ErrUnsupported.
 func (d *Document) SetPartMode(mode int) error {
 	unlock, err := d.guard()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentSetPartMode(d.h, mode)
-	return nil
+	return d.office.be.DocumentSetPartMode(d.h, mode)
 }
 
 // PartName returns the display name of the given part.
@@ -143,16 +143,16 @@ func (d *Document) PartPageRectangles() ([]TwipRect, error) {
 // SetOutlineState toggles outline-group visibility. column=true for
 // Calc column grouping, false for row grouping. level is the outline
 // depth; index is the group index at that level. hidden collapses
-// the group when true. Fire-and-forget at the LOK level; a nil
-// return does not confirm the group state actually changed.
+// the group when true. The underlying LOK call is void; a nil return
+// does not confirm the group state actually changed but a NULL vtable
+// slot now surfaces as ErrUnsupported.
 func (d *Document) SetOutlineState(column bool, level, index int, hidden bool) error {
 	unlock, err := d.guard()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentSetOutlineState(d.h, column, level, index, hidden)
-	return nil
+	return d.office.be.DocumentSetOutlineState(d.h, column, level, index, hidden)
 }
 
 // parsePartPageRectangles parses LOK's "x, y, w, h; x, y, w, h; …"

@@ -173,6 +173,33 @@ func TestRenderPage_MultiPart_NoRestoreWhenActiveInvalid(t *testing.T) {
 	}
 }
 
+// TestRenderPage_MultiPart_PropagatesSetPartUnsupported guards
+// against a silent-failure regression: when DocumentSetPart returns
+// ErrUnsupported (NULL vtable slot on a stripped LO build), the
+// multi-part path must surface it instead of paginating against the
+// wrong (still-active) part. Without the propagation a stripped LO
+// would return the active part's pixels under whatever index the
+// caller asked for, which is exactly the silent-failure pattern PR
+// #38 set out to fix.
+func TestRenderPage_MultiPart_PropagatesSetPartUnsupported(t *testing.T) {
+	fb := &fakeBackend{
+		tileMode:       1,
+		partsCount:     2,
+		partActive:     0,
+		docWidthTwips:  1500,
+		docHeightTwips: 750,
+		setPartErr:     ErrUnsupported,
+	}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.InitializeForRendering(""); err != nil {
+		t.Fatal(err)
+	}
+	_, err := doc.RenderPage(1, 1.0)
+	if !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("RenderPage with NULL setPart vtable: err=%v, want ErrUnsupported", err)
+	}
+}
+
 func TestRenderPage_MultiPart_OutOfRange(t *testing.T) {
 	fb := &fakeBackend{tileMode: 1, partsCount: 3}
 	_, doc := loadFakeDoc(t, fb)
