@@ -105,9 +105,15 @@ type fakeBackend struct {
 	// Vtable-detect injection points (PR B): fakes assert that the
 	// public lok methods propagate the lokc error untouched. Default
 	// nil so existing tests stay unaffected.
-	postKeyEventErr   error
-	postMouseEventErr error
-	postUnoCommandErr error
+	postKeyEventErr          error
+	postMouseEventErr        error
+	postUnoCommandErr        error
+	destroyViewErr           error
+	setViewErr               error
+	setViewLanguageErr       error
+	setViewReadOnlyErr       error
+	setAccessibilityStateErr error
+	setViewTimezoneErr       error
 
 	lastGetTextSelectionMime     string
 	lastSelectionTypeAndTextMime string
@@ -290,7 +296,7 @@ func (f *fakeBackend) DocumentCreateViewWithOptions(d documentHandle, opts strin
 	return f.DocumentCreateView(d)
 }
 
-func (f *fakeBackend) DocumentDestroyView(_ documentHandle, id int) {
+func (f *fakeBackend) DocumentDestroyView(_ documentHandle, id int) error {
 	for i, v := range f.viewsLive {
 		if v == id {
 			f.viewsLive = append(f.viewsLive[:i], f.viewsLive[i+1:]...)
@@ -307,16 +313,18 @@ func (f *fakeBackend) DocumentDestroyView(_ documentHandle, id int) {
 	} else if f.viewActive == id {
 		f.viewActive = -1
 	}
+	return f.destroyViewErr
 }
 
 // DocumentSetView silently ignores an unknown ID — matching real LOK
 // which returns void and gives no failure signal, but constraining
 // the fake to live IDs catches "destroyed-view regressions" in
 // tests before the ID escapes into getView().
-func (f *fakeBackend) DocumentSetView(_ documentHandle, id int) {
+func (f *fakeBackend) DocumentSetView(_ documentHandle, id int) error {
 	if slices.Contains(f.viewsLive, id) {
 		f.viewActive = id
 	}
+	return f.setViewErr
 }
 
 // DocumentGetView returns -1 when no views are live rather than the
@@ -340,21 +348,25 @@ func (f *fakeBackend) DocumentGetViewIds(documentHandle) ([]int, bool) {
 	return out, true
 }
 
-func (f *fakeBackend) DocumentSetViewLanguage(_ documentHandle, id int, lang string) {
+func (f *fakeBackend) DocumentSetViewLanguage(_ documentHandle, id int, lang string) error {
 	f.lastViewLangID = id
 	f.lastViewLang = lang
+	return f.setViewLanguageErr
 }
 
-func (f *fakeBackend) DocumentSetViewReadOnly(_ documentHandle, _ int, ro bool) {
+func (f *fakeBackend) DocumentSetViewReadOnly(_ documentHandle, _ int, ro bool) error {
 	f.lastViewReadOnly = ro
+	return f.setViewReadOnlyErr
 }
 
-func (f *fakeBackend) DocumentSetAccessibilityState(_ documentHandle, _ int, en bool) {
+func (f *fakeBackend) DocumentSetAccessibilityState(_ documentHandle, _ int, en bool) error {
 	f.lastViewA11y = en
+	return f.setAccessibilityStateErr
 }
 
-func (f *fakeBackend) DocumentSetViewTimezone(_ documentHandle, _ int, tz string) {
+func (f *fakeBackend) DocumentSetViewTimezone(_ documentHandle, _ int, tz string) error {
 	f.lastViewTimezone = tz
+	return f.setViewTimezoneErr
 }
 
 // withFakeBackend swaps the package-level backend + singleton. It

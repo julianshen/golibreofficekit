@@ -55,28 +55,28 @@ func (d *Document) CreateViewWithOptions(options string) (ViewID, error) {
 	return ViewID(id), nil
 }
 
-// DestroyView removes the view. LOK returns void, so errors surface
-// only from the closed-doc check.
+// DestroyView removes the view. LOK returns void, so the only
+// observable failure modes are ErrClosed and ErrUnsupported (the
+// vtable slot is NULL on a stripped LO build).
 func (d *Document) DestroyView(id ViewID) error {
 	unlock, err := d.guard()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentDestroyView(d.h, int(id))
-	return nil
+	return d.office.be.DocumentDestroyView(d.h, int(id))
 }
 
 // SetView activates the view. LOK returns void; caller should
-// confirm via View() if the ID is trusted.
+// confirm via View() if the ID is trusted. Returns ErrUnsupported
+// when the LOK build does not expose setView (vtable slot NULL).
 func (d *Document) SetView(id ViewID) error {
 	unlock, err := d.guard()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentSetView(d.h, int(id))
-	return nil
+	return d.office.be.DocumentSetView(d.h, int(id))
 }
 
 // View returns the currently-active view ID. A -1 return from the
@@ -120,47 +120,51 @@ func (d *Document) Views() ([]ViewID, error) {
 }
 
 // SetViewLanguage sets the UI language tag for a specific view.
+// Returns ErrUnsupported when the LOK build does not expose
+// setViewLanguage (vtable slot NULL).
 func (d *Document) SetViewLanguage(id ViewID, lang string) error {
 	unlock, err := d.guard()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentSetViewLanguage(d.h, int(id), lang)
-	return nil
+	return d.office.be.DocumentSetViewLanguage(d.h, int(id), lang)
 }
 
 // SetViewReadOnly toggles the read-only state of a specific view.
+// Returns ErrUnsupported when the LOK build does not expose
+// setViewReadOnly (vtable slot NULL).
 func (d *Document) SetViewReadOnly(id ViewID, readOnly bool) error {
 	unlock, err := d.guard()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentSetViewReadOnly(d.h, int(id), readOnly)
-	return nil
+	return d.office.be.DocumentSetViewReadOnly(d.h, int(id), readOnly)
 }
 
 // SetAccessibilityState turns the per-view accessibility pipeline
-// (a11y tree generation, focus reporting) on or off.
+// (a11y tree generation, focus reporting) on or off. Returns
+// ErrUnsupported when the LOK build does not expose
+// setAccessibilityState (vtable slot NULL).
 func (d *Document) SetAccessibilityState(id ViewID, enabled bool) error {
 	unlock, err := d.guard()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentSetAccessibilityState(d.h, int(id), enabled)
-	return nil
+	return d.office.be.DocumentSetAccessibilityState(d.h, int(id), enabled)
 }
 
 // SetViewTimezone sets the IANA tz name (e.g. "Europe/Berlin") for
-// the given view. Empty string falls back to LO's default.
+// the given view. Empty string falls back to LO's default. Returns
+// ErrUnsupported when the LOK build does not expose setViewTimezone
+// (vtable slot NULL).
 func (d *Document) SetViewTimezone(id ViewID, tz string) error {
 	unlock, err := d.guard()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentSetViewTimezone(d.h, int(id), tz)
-	return nil
+	return d.office.be.DocumentSetViewTimezone(d.h, int(id), tz)
 }

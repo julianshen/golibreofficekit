@@ -127,11 +127,11 @@ func (realBackend) DocumentCreateView(d documentHandle) int {
 func (realBackend) DocumentCreateViewWithOptions(d documentHandle, options string) int {
 	return lokc.DocumentCreateViewWithOptions(mustDoc(d).d, options)
 }
-func (realBackend) DocumentDestroyView(d documentHandle, id int) {
-	lokc.DocumentDestroyView(mustDoc(d).d, id)
+func (realBackend) DocumentDestroyView(d documentHandle, id int) error {
+	return mapLokErr(lokc.DocumentDestroyView(mustDoc(d).d, id))
 }
-func (realBackend) DocumentSetView(d documentHandle, id int) {
-	lokc.DocumentSetView(mustDoc(d).d, id)
+func (realBackend) DocumentSetView(d documentHandle, id int) error {
+	return mapLokErr(lokc.DocumentSetView(mustDoc(d).d, id))
 }
 func (realBackend) DocumentGetView(d documentHandle) int {
 	return lokc.DocumentGetView(mustDoc(d).d)
@@ -142,17 +142,17 @@ func (realBackend) DocumentGetViewsCount(d documentHandle) int {
 func (realBackend) DocumentGetViewIds(d documentHandle) ([]int, bool) {
 	return lokc.DocumentGetViewIds(mustDoc(d).d)
 }
-func (realBackend) DocumentSetViewLanguage(d documentHandle, id int, lang string) {
-	lokc.DocumentSetViewLanguage(mustDoc(d).d, id, lang)
+func (realBackend) DocumentSetViewLanguage(d documentHandle, id int, lang string) error {
+	return mapLokErr(lokc.DocumentSetViewLanguage(mustDoc(d).d, id, lang))
 }
-func (realBackend) DocumentSetViewReadOnly(d documentHandle, id int, readOnly bool) {
-	lokc.DocumentSetViewReadOnly(mustDoc(d).d, id, readOnly)
+func (realBackend) DocumentSetViewReadOnly(d documentHandle, id int, readOnly bool) error {
+	return mapLokErr(lokc.DocumentSetViewReadOnly(mustDoc(d).d, id, readOnly))
 }
-func (realBackend) DocumentSetAccessibilityState(d documentHandle, id int, enabled bool) {
-	lokc.DocumentSetAccessibilityState(mustDoc(d).d, id, enabled)
+func (realBackend) DocumentSetAccessibilityState(d documentHandle, id int, enabled bool) error {
+	return mapLokErr(lokc.DocumentSetAccessibilityState(mustDoc(d).d, id, enabled))
 }
-func (realBackend) DocumentSetViewTimezone(d documentHandle, id int, tz string) {
-	lokc.DocumentSetViewTimezone(mustDoc(d).d, id, tz)
+func (realBackend) DocumentSetViewTimezone(d documentHandle, id int, tz string) error {
+	return mapLokErr(lokc.DocumentSetViewTimezone(mustDoc(d).d, id, tz))
 }
 
 func (realBackend) DocumentGetParts(d documentHandle) int {

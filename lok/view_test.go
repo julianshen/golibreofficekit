@@ -197,6 +197,58 @@ func TestSetViewTimezone_Records(t *testing.T) {
 	}
 }
 
+// PR B (vtable-detect): the public methods must propagate the
+// backend ErrUnsupported untouched so callers on stripped LO builds
+// can react instead of seeing silent success.
+
+func TestDestroyView_PropagatesUnsupported(t *testing.T) {
+	fb := &fakeBackend{destroyViewErr: ErrUnsupported}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.DestroyView(0); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("DestroyView: err=%v, want ErrUnsupported", err)
+	}
+}
+
+func TestSetView_PropagatesUnsupported(t *testing.T) {
+	fb := &fakeBackend{setViewErr: ErrUnsupported}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.SetView(0); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("SetView: err=%v, want ErrUnsupported", err)
+	}
+}
+
+func TestSetViewLanguage_PropagatesUnsupported(t *testing.T) {
+	fb := &fakeBackend{setViewLanguageErr: ErrUnsupported}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.SetViewLanguage(0, "x"); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("SetViewLanguage: err=%v, want ErrUnsupported", err)
+	}
+}
+
+func TestSetViewReadOnly_PropagatesUnsupported(t *testing.T) {
+	fb := &fakeBackend{setViewReadOnlyErr: ErrUnsupported}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.SetViewReadOnly(0, true); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("SetViewReadOnly: err=%v, want ErrUnsupported", err)
+	}
+}
+
+func TestSetAccessibilityState_PropagatesUnsupported(t *testing.T) {
+	fb := &fakeBackend{setAccessibilityStateErr: ErrUnsupported}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.SetAccessibilityState(0, true); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("SetAccessibilityState: err=%v, want ErrUnsupported", err)
+	}
+}
+
+func TestSetViewTimezone_PropagatesUnsupported(t *testing.T) {
+	fb := &fakeBackend{setViewTimezoneErr: ErrUnsupported}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.SetViewTimezone(0, "UTC"); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("SetViewTimezone: err=%v, want ErrUnsupported", err)
+	}
+}
+
 func TestViewConfigurators_AfterCloseErrors(t *testing.T) {
 	cases := []struct {
 		name string

@@ -24,15 +24,15 @@ type backend interface {
 
 	DocumentCreateView(d documentHandle) int
 	DocumentCreateViewWithOptions(d documentHandle, options string) int
-	DocumentDestroyView(d documentHandle, id int)
-	DocumentSetView(d documentHandle, id int)
+	DocumentDestroyView(d documentHandle, id int) error
+	DocumentSetView(d documentHandle, id int) error
 	DocumentGetView(d documentHandle) int
 	DocumentGetViewsCount(d documentHandle) int
 	DocumentGetViewIds(d documentHandle) (ids []int, ok bool)
-	DocumentSetViewLanguage(d documentHandle, id int, lang string)
-	DocumentSetViewReadOnly(d documentHandle, id int, readOnly bool)
-	DocumentSetAccessibilityState(d documentHandle, id int, enabled bool)
-	DocumentSetViewTimezone(d documentHandle, id int, tz string)
+	DocumentSetViewLanguage(d documentHandle, id int, lang string) error
+	DocumentSetViewReadOnly(d documentHandle, id int, readOnly bool) error
+	DocumentSetAccessibilityState(d documentHandle, id int, enabled bool) error
+	DocumentSetViewTimezone(d documentHandle, id int, tz string) error
 
 	DocumentGetParts(d documentHandle) int
 	DocumentGetPart(d documentHandle) int
