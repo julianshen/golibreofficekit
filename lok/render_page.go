@@ -87,9 +87,19 @@ func (d *Document) renderMultiPartPage(page int, dpiScale float64) (*image.NRGBA
 	// in that case so we don't make things worse, and only restore
 	// when we actually moved the active part.
 	active := d.office.be.DocumentGetPart(d.h)
-	d.office.be.DocumentSetPart(d.h, page)
+	if err := d.office.be.DocumentSetPart(d.h, page); err != nil {
+		// A NULL setPart vtable slot means we cannot honour the page
+		// index — surfacing the ErrUnsupported here is the whole point
+		// of widening the backend signature; silently rendering the
+		// still-active part would be the audit-flagged defect.
+		return nil, err
+	}
 	if active >= 0 && active != page {
-		defer d.office.be.DocumentSetPart(d.h, active)
+		// Restore best-effort: the original active part was reachable,
+		// so SetPart is presumably wired. Any error here would only
+		// matter to a caller racing the document, and we have no
+		// channel to surface it without masking the paint result.
+		defer func() { _ = d.office.be.DocumentSetPart(d.h, active) }()
 	}
 
 	w, h := d.office.be.DocumentGetDocumentSize(d.h)
