@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"testing/iotest"
 
@@ -289,6 +290,35 @@ func TestLoad_FallsBackToBackendErrorWhenNoLODetail(t *testing.T) {
 	}
 	if !errors.Is(err, synth) {
 		t.Errorf("errors.Is(synth) failed; chain lost the cause: %v", err)
+	}
+}
+
+// TestLoad_FallbackDoesNotDoublePrefixWhenInnerIsLOKError confirms
+// that when OfficeGetError returns "" AND the backend error is itself
+// a *LOKError (the realBackend.DocumentLoad case in production),
+// the fallback uses the inner Detail rather than the inner Error()
+// so the message doesn't become "lok: Load: lok: Load: ...".
+func TestLoad_FallbackDoesNotDoublePrefixWhenInnerIsLOKError(t *testing.T) {
+	inner := &LOKError{Op: "Load", Detail: "documentLoad returned NULL", err: lokc.ErrNilDocument}
+	fb := &fakeBackend{loadErr: inner, officeError: ""}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+
+	_, err := o.Load("/tmp/x.odt")
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) {
+		t.Fatalf("Load: want *LOKError, got %T %v", err, err)
+	}
+	if lokErr.Detail != "documentLoad returned NULL" {
+		t.Errorf("Detail=%q, want %q (inner Detail, no double prefix)",
+			lokErr.Detail, "documentLoad returned NULL")
+	}
+	if got := err.Error(); strings.Contains(got, "lok: Load: lok:") {
+		t.Errorf("Error()=%q must not contain double prefix", got)
+	}
+	if !errors.Is(err, lokc.ErrNilDocument) {
+		t.Errorf("errors.Is(lokc.ErrNilDocument) failed; chain lost cause: %v", err)
 	}
 }
 
