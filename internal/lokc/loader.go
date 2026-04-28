@@ -42,17 +42,23 @@ func OpenLibrary(installPath string) (*Library, error) {
 	if installPath == "" {
 		return nil, ErrInstallPathRequired
 	}
-	var lastErr error
+	// Accumulate per-candidate failures so the user can see every name
+	// the loader tried, not just the last one. Without aggregation a
+	// user with the upstream libsofficeapp.so layout would see only the
+	// libmergedlo.so error (the final candidate) and have no signal
+	// that libsofficeapp.so was even attempted.
+	var errs []error
 	for _, name := range soCandidates() {
 		handle, err := dlOpen(filepath.Join(installPath, name))
 		if err != nil {
-			lastErr = err
+			errs = append(errs, err)
 			continue
 		}
 		// Found a runtime; the hook symbol must be in this one — we
 		// don't fall through to other candidates if a runtime opened
 		// but lacks the hook, because mixing runtimes from the same
 		// installPath is never correct.
+		var hookErrs []error
 		for _, attempt := range []struct {
 			name    string
 			version int
@@ -60,19 +66,19 @@ func OpenLibrary(installPath string) (*Library, error) {
 			{"libreofficekit_hook_2", 2},
 			{"libreofficekit_hook", 1},
 		} {
-			if sym, symErr := dlSym(handle, attempt.name); symErr == nil {
+			sym, symErr := dlSym(handle, attempt.name)
+			if symErr == nil {
 				return &Library{
 					installPath: installPath,
 					hookSymbol:  sym,
 					hookVersion: attempt.version,
 				}, nil
-			} else {
-				lastErr = symErr
 			}
+			hookErrs = append(hookErrs, symErr)
 		}
-		return nil, lastErr
+		return nil, errors.Join(hookErrs...)
 	}
-	return nil, lastErr
+	return nil, errors.Join(errs...)
 }
 
 // soCandidates returns the runtime filenames OpenLibrary will try, in
