@@ -115,23 +115,20 @@ func convert(loPath, inPath, outPath string, page int, dpiScale float64) error {
 	}
 	defer o.Close()
 
-	absIn, err := filepath.Abs(inPath)
+	// Document.Load and Document.SaveAs both run filepath.Abs
+	// internally before handing the path to LOK; the CLI just passes
+	// inPath/outPath through. os.WriteFile (PNG branch) honours
+	// cwd-relative paths natively, so PNG and PDF treat relative
+	// outputs the same way from the caller's perspective.
+	doc, err := o.Load(inPath)
 	if err != nil {
-		return fmt.Errorf("resolve input path: %w", err)
-	}
-	doc, err := o.Load(absIn)
-	if err != nil {
-		return fmt.Errorf("load %s: %w", absIn, err)
+		return fmt.Errorf("load %s: %w", inPath, err)
 	}
 	defer doc.Close()
 
 	switch format {
 	case fmtPDF:
-		absOut, err := filepath.Abs(outPath)
-		if err != nil {
-			return fmt.Errorf("resolve output path: %w", err)
-		}
-		if err := doc.SaveAs(absOut, "pdf", ""); err != nil {
+		if err := doc.SaveAs(outPath, "pdf", ""); err != nil {
 			return fmt.Errorf("export PDF: %w", err)
 		}
 		return nil
