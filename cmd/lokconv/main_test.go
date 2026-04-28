@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -46,6 +47,16 @@ func TestResolveLOPath_RejectsExplicitNonDir(t *testing.T) {
 	}
 }
 
+// A typo'd -lo-path is the realistic failure mode; assert the missing
+// path is reported (don't bother matching the wrap text — different
+// platforms phrase ENOENT differently).
+func TestResolveLOPath_RejectsExplicitMissing(t *testing.T) {
+	ghost := filepath.Join(t.TempDir(), "no", "such", "dir")
+	if _, err := resolveLOPath(ghost, nil); err == nil {
+		t.Errorf("expected error for missing explicit path")
+	}
+}
+
 func TestResolveLOPath_AutoDetect(t *testing.T) {
 	a := t.TempDir()
 	b := t.TempDir()
@@ -64,5 +75,18 @@ func TestResolveLOPath_AutoDetect(t *testing.T) {
 func TestResolveLOPath_NoneFound(t *testing.T) {
 	if _, err := resolveLOPath("", []string{"/does/not/exist", "/nope"}); err == nil {
 		t.Errorf("expected error when no candidate exists")
+	}
+}
+
+// convert's unsupported-extension branch is reachable without a real
+// LO install — the format check happens before lok.New. Use a
+// deliberately-bogus loPath to make sure we hit the early-return.
+func TestConvert_UnsupportedExtension(t *testing.T) {
+	err := convert("/no/such/lo", "in.odt", "out.bmp", 0, 1.0)
+	if err == nil {
+		t.Fatal("expected error for unsupported extension, got nil")
+	}
+	if !strings.Contains(err.Error(), "unsupported output extension") {
+		t.Errorf("error %q does not mention unsupported extension", err)
 	}
 }

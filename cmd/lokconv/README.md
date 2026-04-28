@@ -63,11 +63,11 @@ The `-page` flag follows the binding's `Document.RenderPage` semantics:
 - **Calc** — sheet index (0 = first sheet)
 - **Impress** — slide index
 - **Draw** — page index
-- **Writer** — page within the document, bounded by LO's
-  `getPartPageRectangles`. For multi-page Writer docs each page is
-  rendered separately; for single-page output of the whole layout
-  use the binding's `Document.RenderPNG` (no per-page version is
-  exposed by `lokconv` today).
+- **Writer** — page within the current part (Writer typically has
+  one part), bounded by LO's `getPartPageRectangles`. For
+  single-page output of the whole vertical layout use the binding's
+  `Document.RenderPNG` directly; `lokconv` does not expose that
+  variant today.
 
 ## Limitations
 

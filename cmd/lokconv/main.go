@@ -115,11 +115,12 @@ func convert(loPath, inPath, outPath string, page int, dpiScale float64) error {
 	}
 	defer o.Close()
 
-	// Document.Load and Document.SaveAs both run filepath.Abs
-	// internally before handing the path to LOK; the CLI just passes
-	// inPath/outPath through. os.WriteFile (PNG branch) honours
-	// cwd-relative paths natively, so PNG and PDF treat relative
-	// outputs the same way from the caller's perspective.
+	// Document.Load and Document.SaveAs both run filepath.Abs and
+	// then convert the result to a file:// URL inside the binding
+	// (lok.pathToFileURL); the CLI just passes inPath/outPath
+	// through. os.WriteFile (PNG branch) honours cwd-relative paths
+	// natively, so PNG and PDF treat relative outputs the same way
+	// from the caller's perspective.
 	doc, err := o.Load(inPath)
 	if err != nil {
 		return fmt.Errorf("load %s: %w", inPath, err)
@@ -129,6 +130,12 @@ func convert(loPath, inPath, outPath string, page int, dpiScale float64) error {
 	switch format {
 	case fmtPDF:
 		if err := doc.SaveAs(outPath, "pdf", ""); err != nil {
+			// SaveAs may have written a partial file before failing;
+			// remove it so the caller doesn't see a corrupt PDF
+			// alongside a non-zero exit. The PNG branch is naturally
+			// atomic — RenderPagePNG produces the bytes in memory
+			// before os.WriteFile lands them.
+			_ = os.Remove(outPath)
 			return fmt.Errorf("export PDF: %w", err)
 		}
 		return nil
