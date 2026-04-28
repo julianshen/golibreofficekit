@@ -249,6 +249,8 @@ func mapLokErr(err error) error {
 		return ErrSignFailed
 	case errors.Is(err, lokc.ErrPasteFailed):
 		return ErrPasteFailed
+	case errors.Is(err, lokc.ErrClipboardFailed):
+		return ErrClipboardFailed
 	}
 	return err
 }

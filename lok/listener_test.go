@@ -127,6 +127,93 @@ func TestListenerSet_PanicRecovered(t *testing.T) {
 	t.Errorf("listener after panic never ran: %d", afterPanic.Load())
 }
 
+func TestListenerSet_PanickedCounter(t *testing.T) {
+	ls := newListenerSet()
+	defer ls.close()
+
+	if got := ls.Panicked(); got != 0 {
+		t.Errorf("Panicked() initial = %d, want 0", got)
+	}
+
+	done := make(chan struct{})
+	ls.add(func(e Event) { panic("boom") })
+	ls.add(func(e Event) { close(done) })
+
+	ls.Dispatch(0, nil)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("second listener never ran")
+	}
+
+	// Counter is incremented inside runOne's deferred recover; allow a
+	// brief window for the goroutine to update it after the second
+	// listener finishes (counter Add is sequenced before close(done) of
+	// neighbouring listener but happens in a separate runOne).
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if ls.Panicked() == 1 {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Errorf("Panicked() = %d, want 1", ls.Panicked())
+}
+
+func TestOffice_PanickedListeners_StartsAtZero(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	if got := o.PanickedListeners(); got != 0 {
+		t.Errorf("PanickedListeners()=%d, want 0", got)
+	}
+}
+
+func TestDocument_PanickedListeners_StartsAtZero(t *testing.T) {
+	withFakeBackend(t, &fakeBackend{})
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+	if got := doc.PanickedListeners(); got != 0 {
+		t.Errorf("PanickedListeners()=%d, want 0", got)
+	}
+}
+
+func TestDocument_PanickedListeners_IncrementsOnPanic(t *testing.T) {
+	fb := &fakeBackend{}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	done := make(chan struct{})
+	if _, err := doc.AddListener(func(Event) { panic("boom") }); err != nil {
+		t.Fatalf("AddListener: %v", err)
+	}
+	if _, err := doc.AddListener(func(Event) { close(done) }); err != nil {
+		t.Fatalf("AddListener: %v", err)
+	}
+	dispatchDocumentFromFake(t, fb).Dispatch(int(EventTypeTextSelection), nil)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("dispatcher never delivered to second listener")
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if doc.PanickedListeners() == 1 {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Errorf("PanickedListeners()=%d, want 1", doc.PanickedListeners())
+}
+
 func TestListenerSet_AddNilReturnsError(t *testing.T) {
 	ls := newListenerSet()
 	defer ls.close()

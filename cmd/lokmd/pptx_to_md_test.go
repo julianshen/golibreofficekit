@@ -1,9 +1,54 @@
 package main
 
 import (
+	"errors"
+	"io/fs"
+	"os"
 	"strings"
 	"testing"
 )
+
+func TestReserveTempPath_PropagatesCloseError(t *testing.T) {
+	// Pre-close the file so reserveTempPath's own Close call returns
+	// fs.ErrClosed. This drives the surface-the-Close-error path with
+	// only stdlib primitives — no fake interface needed.
+	tmp, err := os.CreateTemp("", "lokmd-test-*.fodp")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer os.Remove(tmp.Name())
+	if err := tmp.Close(); err != nil {
+		t.Fatalf("pre-close: %v", err)
+	}
+	_, gotErr := reserveTempPath(tmp, nil)
+	if !errors.Is(gotErr, fs.ErrClosed) {
+		t.Fatalf("got %v, want chain containing fs.ErrClosed", gotErr)
+	}
+}
+
+func TestReserveTempPath_PropagatesCreateError(t *testing.T) {
+	want := errors.New("no space")
+	_, err := reserveTempPath(nil, want)
+	if !errors.Is(err, want) {
+		t.Fatalf("got %v, want chain containing %v", err, want)
+	}
+}
+
+func TestReserveTempPath_ReturnsName(t *testing.T) {
+	tmp, err := os.CreateTemp("", "lokmd-test-*.fodp")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer os.Remove(tmp.Name())
+	want := tmp.Name()
+	got, err := reserveTempPath(tmp, nil)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if got != want {
+		t.Errorf("path=%q, want %q", got, want)
+	}
+}
 
 func TestParseFODPSlides_TwoSlides(t *testing.T) {
 	xml := `<?xml version="1.0"?>

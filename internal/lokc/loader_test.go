@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -197,6 +198,48 @@ func TestOpenLibrary_PrefersSofficeappOverMergedLO(t *testing.T) {
 	// We have no observable way to assert *which* file was opened
 	// (both expose the same symbol), but the loader must pick the
 	// upstream name first per the documented preference order.
+}
+
+// When neither candidate library exists, OpenLibrary should surface
+// per-candidate failures so a debugging user can see *all* of the names
+// and error strings the loader tried — not just the last one. Before the
+// fix, lastErr-overwrite semantics hid every attempt except the final
+// one, which on Linux is libmergedlo.so. A user with the upstream
+// libsofficeapp.so layout would otherwise see only the libmergedlo.so
+// error and not realise libsofficeapp.so was tried at all.
+func TestOpenLibrary_AggregatesCandidateFailures(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("multi-candidate aggregation is Linux-specific")
+	}
+	dir := t.TempDir() // empty: every soCandidate dlopen fails
+	_, err := OpenLibrary(dir)
+	if err == nil {
+		t.Fatal("expected error for empty install dir")
+	}
+	msg := err.Error()
+	for _, name := range []string{"libsofficeapp.so", "libmergedlo.so"} {
+		if !strings.Contains(msg, name) {
+			t.Errorf("aggregated error missing %q: %s", name, msg)
+		}
+	}
+}
+
+// When a runtime opens but lacks the hook symbol, both hook-name
+// attempts (libreofficekit_hook_2 and libreofficekit_hook) must surface
+// in the error; previously the loader returned only the second symbol's
+// dlsym error.
+func TestOpenLibrary_AggregatesHookSymbolFailures(t *testing.T) {
+	dir := buildFakeSO(t) // .so but no hook symbols
+	_, err := OpenLibrary(dir)
+	if err == nil {
+		t.Fatal("expected error for .so without hook symbols")
+	}
+	msg := err.Error()
+	for _, sym := range []string{"libreofficekit_hook_2", "libreofficekit_hook"} {
+		if !strings.Contains(msg, sym) {
+			t.Errorf("aggregated error missing %q: %s", sym, msg)
+		}
+	}
 }
 
 func TestLibrary_Accessors(t *testing.T) {

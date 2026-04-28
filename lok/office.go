@@ -196,6 +196,15 @@ func (o *Office) DroppedEvents() uint64 {
 	return o.listeners.Dropped()
 }
 
+// PanickedListeners returns the cumulative count of office-level
+// listener callbacks that panicked. The dispatcher recovers from
+// listener panics so other listeners keep running, but the count is
+// surfaced here so callers can detect a permanently broken listener
+// instead of losing the signal to logs alone.
+func (o *Office) PanickedListeners() uint64 {
+	return o.listeners.Panicked()
+}
+
 // SetDocumentPassword preloads the password for a document URL that
 // will be opened next. Returns ErrClosed if the Office has been
 // closed and *LOKError with Op="SetDocumentPassword" if url is empty.
