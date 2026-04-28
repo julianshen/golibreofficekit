@@ -2,49 +2,51 @@ package main
 
 import (
 	"errors"
+	"io/fs"
+	"os"
 	"strings"
 	"testing"
 )
 
-// fakeTempFile satisfies the namedCloser interface so we can drive the
-// reserveTempPath helper's Close-error path without touching disk.
-type fakeTempFile struct {
-	name     string
-	closeErr error
-}
-
-func (f *fakeTempFile) Name() string { return f.name }
-func (f *fakeTempFile) Close() error { return f.closeErr }
-
 func TestReserveTempPath_PropagatesCloseError(t *testing.T) {
-	want := errors.New("disk full")
-	_, err := reserveTempPath(func() (namedCloser, error) {
-		return &fakeTempFile{name: "/tmp/x.fodp", closeErr: want}, nil
-	})
-	if !errors.Is(err, want) {
-		t.Fatalf("got %v, want chain containing %v", err, want)
+	// Pre-close the file so reserveTempPath's own Close call returns
+	// fs.ErrClosed. This drives the surface-the-Close-error path with
+	// only stdlib primitives — no fake interface needed.
+	tmp, err := os.CreateTemp("", "lokmd-test-*.fodp")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer os.Remove(tmp.Name())
+	if err := tmp.Close(); err != nil {
+		t.Fatalf("pre-close: %v", err)
+	}
+	_, gotErr := reserveTempPath(tmp, nil)
+	if !errors.Is(gotErr, fs.ErrClosed) {
+		t.Fatalf("got %v, want chain containing fs.ErrClosed", gotErr)
 	}
 }
 
 func TestReserveTempPath_PropagatesCreateError(t *testing.T) {
 	want := errors.New("no space")
-	_, err := reserveTempPath(func() (namedCloser, error) {
-		return nil, want
-	})
+	_, err := reserveTempPath(nil, want)
 	if !errors.Is(err, want) {
 		t.Fatalf("got %v, want chain containing %v", err, want)
 	}
 }
 
 func TestReserveTempPath_ReturnsName(t *testing.T) {
-	got, err := reserveTempPath(func() (namedCloser, error) {
-		return &fakeTempFile{name: "/tmp/picked.fodp"}, nil
-	})
+	tmp, err := os.CreateTemp("", "lokmd-test-*.fodp")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer os.Remove(tmp.Name())
+	want := tmp.Name()
+	got, err := reserveTempPath(tmp, nil)
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
-	if got != "/tmp/picked.fodp" {
-		t.Errorf("path=%q, want /tmp/picked.fodp", got)
+	if got != want {
+		t.Errorf("path=%q, want %q", got, want)
 	}
 }
 
