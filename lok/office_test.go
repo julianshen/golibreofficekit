@@ -24,6 +24,11 @@ type fakeBackend struct {
 	version  string
 	destroys int
 
+	// officeError is what OfficeGetError returns. Tests that exercise
+	// the load/save error-detail wiring populate this with a known
+	// LO-side message.
+	officeError string
+
 	// Captured call arguments. Not mutex-guarded because
 	// withFakeBackend forbids t.Parallel().
 	lastAuthor      string
@@ -209,7 +214,7 @@ func (f *fakeBackend) InvokeHook(lib libraryHandle, _ string) (officeHandle, err
 	}
 	return &fakeOffice{be: f}, nil
 }
-func (f *fakeBackend) OfficeGetError(officeHandle) string             { return "" }
+func (f *fakeBackend) OfficeGetError(officeHandle) string             { return f.officeError }
 func (f *fakeBackend) OfficeGetVersionInfo(officeHandle) string       { return f.version }
 func (f *fakeBackend) OfficeSetOptionalFeatures(officeHandle, uint64) {}
 func (f *fakeBackend) OfficeSetAuthor(_ officeHandle, s string)       { f.lastAuthor = s }
@@ -230,19 +235,21 @@ type fakeDoc struct{}
 func (*fakeDoc) documentBrand() {}
 
 func (f *fakeBackend) DocumentLoad(_ officeHandle, url string) (documentHandle, error) {
+	// Record the call before honouring loadErr so error-path tests can
+	// still assert which entry point was taken.
+	f.lastLoadURL = url
 	if f.loadErr != nil {
 		return nil, f.loadErr
 	}
-	f.lastLoadURL = url
 	return &fakeDoc{}, nil
 }
 
 func (f *fakeBackend) DocumentLoadWithOptions(_ officeHandle, url, opts string) (documentHandle, error) {
+	f.lastLoadURL = url
+	f.lastLoadOpts = opts
 	if f.loadErr != nil {
 		return nil, f.loadErr
 	}
-	f.lastLoadURL = url
-	f.lastLoadOpts = opts
 	return &fakeDoc{}, nil
 }
 

@@ -197,6 +197,28 @@ func TestMapLokErr_NoValue(t *testing.T) {
 	}
 }
 
+// TestMapLokErr_SaveFailed: a save failure escaping any path that
+// goes through mapLokErr must surface as *LOKError with Op="Save"
+// and the underlying lokc sentinel still in the wrap chain.
+//
+// Document.SaveAs has its own wrapLOErr that fills Detail from
+// OfficeGetError, so the typical save path doesn't reach mapLokErr.
+// This translation is the safety net for any future caller that
+// returns lokc.ErrSaveFailed without a parent Office in scope.
+func TestMapLokErr_SaveFailed(t *testing.T) {
+	got := mapLokErr(lokc.ErrSaveFailed)
+	var lokErr *LOKError
+	if !errors.As(got, &lokErr) {
+		t.Fatalf("mapLokErr(ErrSaveFailed)=%T %v, want *LOKError", got, got)
+	}
+	if lokErr.Op != "Save" {
+		t.Errorf("Op=%q, want Save", lokErr.Op)
+	}
+	if !errors.Is(got, lokc.ErrSaveFailed) {
+		t.Errorf("errors.Is(lokc.ErrSaveFailed) failed; chain lost the sentinel: %v", got)
+	}
+}
+
 // TestRealBackend_ViewForwarding covers every view-method forwarder
 // via a lokc fake DocumentHandle (pClass==NULL). Return values
 // reflect the guarded-NULL path.

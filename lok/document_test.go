@@ -6,8 +6,11 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"testing/iotest"
+
+	"github.com/julianshen/golibreofficekit/internal/lokc"
 )
 
 func TestDocumentType_String(t *testing.T) {
@@ -204,6 +207,121 @@ func TestLoad_BackendError(t *testing.T) {
 	}
 }
 
+// TestLoad_SurfacesLOErrorDetail asserts that when DocumentLoad fails
+// AND LibreOffice has a pending error string, Office.Load returns a
+// *LOKError whose Detail is the LO-supplied diagnostic — not the
+// internal-sentinel message. This is the user-visible bit that tells
+// callers WHY a load failed (password required, filter rejected, etc.).
+func TestLoad_SurfacesLOErrorDetail(t *testing.T) {
+	fb := &fakeBackend{
+		loadErr:     errors.New("synthetic load failure"),
+		officeError: "password required",
+	}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+
+	_, err := o.Load("/tmp/x.odt")
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) {
+		t.Fatalf("Load: want *LOKError, got %T %v", err, err)
+	}
+	if lokErr.Op != "Load" {
+		t.Errorf("Op=%q, want Load", lokErr.Op)
+	}
+	if lokErr.Detail != "password required" {
+		t.Errorf("Detail=%q, want %q", lokErr.Detail, "password required")
+	}
+}
+
+// TestLoadWithOptions_SurfacesLOErrorDetail mirrors
+// TestLoad_SurfacesLOErrorDetail for the LoadWithOptions code path —
+// triggered by passing any LoadOption that touches the options string.
+// LoadWithOptions and Load take separate backend entry points, so
+// both routes must surface the LO diagnostic.
+func TestLoadWithOptions_SurfacesLOErrorDetail(t *testing.T) {
+	fb := &fakeBackend{
+		loadErr:     errors.New("synthetic load failure"),
+		officeError: "filter rejected",
+	}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+
+	_, err := o.Load("/tmp/x.docx", WithReadOnly())
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) {
+		t.Fatalf("Load: want *LOKError, got %T %v", err, err)
+	}
+	if lokErr.Op != "Load" {
+		t.Errorf("Op=%q, want Load", lokErr.Op)
+	}
+	if lokErr.Detail != "filter rejected" {
+		t.Errorf("Detail=%q, want %q", lokErr.Detail, "filter rejected")
+	}
+	// Also assert the LoadWithOptions path was exercised, not the
+	// no-options path. fb.lastLoadOpts is only populated by
+	// DocumentLoadWithOptions in the fake.
+	if fb.lastLoadOpts == "" {
+		t.Error("LoadWithOptions path was not exercised; fb.lastLoadOpts empty")
+	}
+}
+
+// TestLoad_FallsBackToBackendErrorWhenNoLODetail confirms the
+// fallback: when LO has nothing pending in getError, the *LOKError
+// still surfaces a useful message rather than dropping the cause.
+func TestLoad_FallsBackToBackendErrorWhenNoLODetail(t *testing.T) {
+	synth := errors.New("synthetic load failure")
+	fb := &fakeBackend{loadErr: synth, officeError: ""}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+
+	_, err := o.Load("/tmp/x.odt")
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) {
+		t.Fatalf("Load: want *LOKError, got %T %v", err, err)
+	}
+	if lokErr.Op != "Load" {
+		t.Errorf("Op=%q, want Load", lokErr.Op)
+	}
+	if lokErr.Detail == "" {
+		t.Error("Detail empty; want fallback message including the backend error")
+	}
+	if !errors.Is(err, synth) {
+		t.Errorf("errors.Is(synth) failed; chain lost the cause: %v", err)
+	}
+}
+
+// TestLoad_FallbackDoesNotDoublePrefixWhenInnerIsLOKError confirms
+// that when OfficeGetError returns "" AND the backend error is itself
+// a *LOKError (the realBackend.DocumentLoad case in production),
+// the fallback uses the inner Detail rather than the inner Error()
+// so the message doesn't become "lok: Load: lok: Load: ...".
+func TestLoad_FallbackDoesNotDoublePrefixWhenInnerIsLOKError(t *testing.T) {
+	inner := &LOKError{Op: "Load", Detail: "documentLoad returned NULL", err: lokc.ErrNilDocument}
+	fb := &fakeBackend{loadErr: inner, officeError: ""}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+
+	_, err := o.Load("/tmp/x.odt")
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) {
+		t.Fatalf("Load: want *LOKError, got %T %v", err, err)
+	}
+	if lokErr.Detail != "documentLoad returned NULL" {
+		t.Errorf("Detail=%q, want %q (inner Detail, no double prefix)",
+			lokErr.Detail, "documentLoad returned NULL")
+	}
+	if got := err.Error(); strings.Contains(got, "lok: Load: lok:") {
+		t.Errorf("Error()=%q must not contain double prefix", got)
+	}
+	if !errors.Is(err, lokc.ErrNilDocument) {
+		t.Errorf("errors.Is(lokc.ErrNilDocument) failed; chain lost cause: %v", err)
+	}
+}
+
 func TestLoad_InvalidLanguageOption(t *testing.T) {
 	withFakeBackend(t, &fakeBackend{})
 	o, _ := New("/install")
@@ -298,6 +416,67 @@ func TestSaveAs_BackendError(t *testing.T) {
 	err := doc.SaveAs("/tmp/x.pdf", "pdf", "")
 	if !errors.Is(err, synth) {
 		t.Errorf("want synthetic via Unwrap, got %v", err)
+	}
+}
+
+// TestSaveAs_SurfacesLOErrorDetail asserts that when DocumentSaveAs
+// fails with lokc.ErrSaveFailed AND LibreOffice has a pending error,
+// Document.SaveAs returns *LOKError{Op:"Save", Detail:<LO message>}.
+// Save failures otherwise surface as the bare "saveAs returned
+// failure" sentinel — useless for users trying to figure out why
+// (read-only filesystem? unknown filter? format mismatch?).
+func TestSaveAs_SurfacesLOErrorDetail(t *testing.T) {
+	fb := &fakeBackend{
+		saveErr:     lokc.ErrSaveFailed,
+		officeError: "filter not registered",
+	}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	err := doc.SaveAs("/tmp/x.pdf", "pdf", "")
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) {
+		t.Fatalf("SaveAs: want *LOKError, got %T %v", err, err)
+	}
+	if lokErr.Op != "Save" {
+		t.Errorf("Op=%q, want Save", lokErr.Op)
+	}
+	if lokErr.Detail != "filter not registered" {
+		t.Errorf("Detail=%q, want %q", lokErr.Detail, "filter not registered")
+	}
+	// errors.Is must still walk to the underlying lokc sentinel so
+	// callers that branch on it keep working.
+	if !errors.Is(err, lokc.ErrSaveFailed) {
+		t.Errorf("errors.Is(lokc.ErrSaveFailed) failed: %v", err)
+	}
+}
+
+// TestSave_SurfacesLOErrorDetail covers the same path through Save
+// (which forwards to DocumentSaveAs internally with origURL).
+func TestSave_SurfacesLOErrorDetail(t *testing.T) {
+	fb := &fakeBackend{
+		saveErr:     lokc.ErrSaveFailed,
+		officeError: "permission denied",
+	}
+	withFakeBackend(t, fb)
+	o, _ := New("/install")
+	defer o.Close()
+	doc, _ := o.Load("/tmp/x.odt")
+	defer doc.Close()
+
+	err := doc.Save()
+	var lokErr *LOKError
+	if !errors.As(err, &lokErr) {
+		t.Fatalf("Save: want *LOKError, got %T %v", err, err)
+	}
+	if lokErr.Op != "Save" {
+		t.Errorf("Op=%q, want Save", lokErr.Op)
+	}
+	if lokErr.Detail != "permission denied" {
+		t.Errorf("Detail=%q, want %q", lokErr.Detail, "permission denied")
 	}
 }
 
