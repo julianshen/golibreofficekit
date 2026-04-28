@@ -114,6 +114,9 @@ type fakeBackend struct {
 	setViewReadOnlyErr       error
 	setAccessibilityStateErr error
 	setViewTimezoneErr       error
+	setPartErr               error
+	setPartModeErr           error
+	setOutlineStateErr       error
 
 	lastGetTextSelectionMime     string
 	lastSelectionTypeAndTextMime string
@@ -589,14 +592,16 @@ func TestRemainingMethods_AfterCloseErrors(t *testing.T) {
 func (f *fakeBackend) DocumentGetParts(documentHandle) int { return f.partsCount }
 func (f *fakeBackend) DocumentGetPart(documentHandle) int  { return f.partActive }
 
-func (f *fakeBackend) DocumentSetPart(_ documentHandle, n int) {
+func (f *fakeBackend) DocumentSetPart(_ documentHandle, n int) error {
 	if n >= 0 && n < f.partsCount {
 		f.partActive = n
 	}
+	return f.setPartErr
 }
 
-func (f *fakeBackend) DocumentSetPartMode(_ documentHandle, mode int) {
+func (f *fakeBackend) DocumentSetPartMode(_ documentHandle, mode int) error {
 	f.lastPartMode = mode
+	return f.setPartModeErr
 }
 
 func (f *fakeBackend) DocumentGetPartName(_ documentHandle, n int) string {
@@ -619,11 +624,12 @@ func (f *fakeBackend) DocumentGetDocumentSize(documentHandle) (int64, int64) {
 	return f.docWidthTwips, f.docHeightTwips
 }
 
-func (f *fakeBackend) DocumentSetOutlineState(_ documentHandle, column bool, level, index int, hidden bool) {
+func (f *fakeBackend) DocumentSetOutlineState(_ documentHandle, column bool, level, index int, hidden bool) error {
 	f.lastOutlineCol = column
 	f.lastOutlineLevel = level
 	f.lastOutlineIndex = index
 	f.lastOutlineHidden = hidden
+	return f.setOutlineStateErr
 }
 
 func (f *fakeBackend) DocumentInitializeForRendering(_ documentHandle, args string) {

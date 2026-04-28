@@ -16,13 +16,17 @@ static int go_doc_get_part(LibreOfficeKitDocument* d) {
     if (d == NULL || d->pClass == NULL || d->pClass->getPart == NULL) return -1;
     return d->pClass->getPart(d);
 }
-static void go_doc_set_part(LibreOfficeKitDocument* d, int n) {
-    if (d == NULL || d->pClass == NULL || d->pClass->setPart == NULL) return;
+// Setters return 1 on success, 0 when the vtable slot is NULL (caller
+// maps to ErrUnsupported). Mirrors the selection.go pattern.
+static int go_doc_set_part(LibreOfficeKitDocument* d, int n) {
+    if (d == NULL || d->pClass == NULL || d->pClass->setPart == NULL) return 0;
     d->pClass->setPart(d, n);
+    return 1;
 }
-static void go_doc_set_part_mode(LibreOfficeKitDocument* d, int mode) {
-    if (d == NULL || d->pClass == NULL || d->pClass->setPartMode == NULL) return;
+static int go_doc_set_part_mode(LibreOfficeKitDocument* d, int mode) {
+    if (d == NULL || d->pClass == NULL || d->pClass->setPartMode == NULL) return 0;
     d->pClass->setPartMode(d, mode);
+    return 1;
 }
 static char* go_doc_get_part_name(LibreOfficeKitDocument* d, int n) {
     if (d == NULL || d->pClass == NULL || d->pClass->getPartName == NULL) return NULL;
@@ -45,9 +49,10 @@ static void go_doc_get_document_size(LibreOfficeKitDocument* d, long* w, long* h
     if (d == NULL || d->pClass == NULL || d->pClass->getDocumentSize == NULL) return;
     d->pClass->getDocumentSize(d, w, h);
 }
-static void go_doc_set_outline_state(LibreOfficeKitDocument* d, bool col, int level, int idx, bool hidden) {
-    if (d == NULL || d->pClass == NULL || d->pClass->setOutlineState == NULL) return;
+static int go_doc_set_outline_state(LibreOfficeKitDocument* d, bool col, int level, int idx, bool hidden) {
+    if (d == NULL || d->pClass == NULL || d->pClass->setOutlineState == NULL) return 0;
     d->pClass->setOutlineState(d, col, level, idx, hidden);
+    return 1;
 }
 */
 import "C"
@@ -69,21 +74,30 @@ func DocumentGetPart(d DocumentHandle) int {
 	return int(C.go_doc_get_part(d.p))
 }
 
-// DocumentSetPart forwards to pClass->setPart.
-func DocumentSetPart(d DocumentHandle, n int) {
+// DocumentSetPart forwards to pClass->setPart. Returns ErrUnsupported
+// on a zero handle or when the vtable slot is NULL.
+func DocumentSetPart(d DocumentHandle, n int) error {
 	if !d.IsValid() {
-		return
+		return ErrUnsupported
 	}
-	C.go_doc_set_part(d.p, C.int(n))
+	if C.go_doc_set_part(d.p, C.int(n)) == 0 {
+		return ErrUnsupported
+	}
+	return nil
 }
 
 // DocumentSetPartMode forwards to pClass->setPartMode. The mode
 // enum values live in LibreOfficeKitEnums.h (LOK_PARTMODE_*).
-func DocumentSetPartMode(d DocumentHandle, mode int) {
+// Returns ErrUnsupported on a zero handle or when the vtable slot
+// is NULL.
+func DocumentSetPartMode(d DocumentHandle, mode int) error {
 	if !d.IsValid() {
-		return
+		return ErrUnsupported
 	}
-	C.go_doc_set_part_mode(d.p, C.int(mode))
+	if C.go_doc_set_part_mode(d.p, C.int(mode)) == 0 {
+		return ErrUnsupported
+	}
+	return nil
 }
 
 // DocumentGetPartName returns the part's display name. Empty string
@@ -135,9 +149,14 @@ func DocumentGetDocumentSize(d DocumentHandle) (int64, int64) {
 }
 
 // DocumentSetOutlineState forwards to pClass->setOutlineState.
-func DocumentSetOutlineState(d DocumentHandle, column bool, level, index int, hidden bool) {
+// Returns ErrUnsupported on a zero handle or when the vtable slot
+// is NULL.
+func DocumentSetOutlineState(d DocumentHandle, column bool, level, index int, hidden bool) error {
 	if !d.IsValid() {
-		return
+		return ErrUnsupported
 	}
-	C.go_doc_set_outline_state(d.p, C.bool(column), C.int(level), C.int(index), C.bool(hidden))
+	if C.go_doc_set_outline_state(d.p, C.bool(column), C.int(level), C.int(index), C.bool(hidden)) == 0 {
+		return ErrUnsupported
+	}
+	return nil
 }

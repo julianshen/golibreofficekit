@@ -36,14 +36,14 @@ type backend interface {
 
 	DocumentGetParts(d documentHandle) int
 	DocumentGetPart(d documentHandle) int
-	DocumentSetPart(d documentHandle, n int)
-	DocumentSetPartMode(d documentHandle, mode int)
+	DocumentSetPart(d documentHandle, n int) error
+	DocumentSetPartMode(d documentHandle, mode int) error
 	DocumentGetPartName(d documentHandle, n int) string
 	DocumentGetPartHash(d documentHandle, n int) string
 	DocumentGetPartInfo(d documentHandle, n int) string
 	DocumentGetPartPageRectangles(d documentHandle) string
 	DocumentGetDocumentSize(d documentHandle) (int64, int64)
-	DocumentSetOutlineState(d documentHandle, column bool, level, index int, hidden bool)
+	DocumentSetOutlineState(d documentHandle, column bool, level, index int, hidden bool) error
 
 	DocumentInitializeForRendering(d documentHandle, args string)
 	DocumentGetTileMode(d documentHandle) int

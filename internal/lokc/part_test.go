@@ -27,9 +27,17 @@ func TestDocumentPart_NilHandleAreNoOps(t *testing.T) {
 	if got := DocumentGetPartPageRectangles(d); got != "" {
 		t.Errorf("GetPartPageRectangles on nil: got %q, want empty", got)
 	}
-	DocumentSetPart(d, 0)
-	DocumentSetPartMode(d, 0)
-	DocumentSetOutlineState(d, false, 0, 0, false)
+	// PR B: setters now report ErrUnsupported instead of silently
+	// no-opping when the vtable slot is NULL (or the handle is zero).
+	if err := DocumentSetPart(d, 0); err != ErrUnsupported {
+		t.Errorf("SetPart on nil: err=%v, want ErrUnsupported", err)
+	}
+	if err := DocumentSetPartMode(d, 0); err != ErrUnsupported {
+		t.Errorf("SetPartMode on nil: err=%v, want ErrUnsupported", err)
+	}
+	if err := DocumentSetOutlineState(d, false, 0, 0, false); err != ErrUnsupported {
+		t.Errorf("SetOutlineState on nil: err=%v, want ErrUnsupported", err)
+	}
 }
 
 func TestDocumentPart_FakeHandle_SafeNoOps(t *testing.T) {
@@ -57,7 +65,13 @@ func TestDocumentPart_FakeHandle_SafeNoOps(t *testing.T) {
 	if got := DocumentGetPartPageRectangles(d); got != "" {
 		t.Errorf("GetPartPageRectangles on fake: got %q, want empty", got)
 	}
-	DocumentSetPart(d, 0)
-	DocumentSetPartMode(d, 0)
-	DocumentSetOutlineState(d, false, 0, 0, false)
+	if err := DocumentSetPart(d, 0); err != ErrUnsupported {
+		t.Errorf("SetPart on fake: err=%v, want ErrUnsupported", err)
+	}
+	if err := DocumentSetPartMode(d, 0); err != ErrUnsupported {
+		t.Errorf("SetPartMode on fake: err=%v, want ErrUnsupported", err)
+	}
+	if err := DocumentSetOutlineState(d, false, 0, 0, false); err != ErrUnsupported {
+		t.Errorf("SetOutlineState on fake: err=%v, want ErrUnsupported", err)
+	}
 }

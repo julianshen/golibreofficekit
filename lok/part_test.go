@@ -218,6 +218,34 @@ func TestSetOutlineState_PassesParams(t *testing.T) {
 	}
 }
 
+// PR B (vtable-detect): the public methods must propagate the
+// backend ErrUnsupported untouched so callers on stripped LO builds
+// can react instead of seeing silent success.
+
+func TestSetPart_PropagatesUnsupported(t *testing.T) {
+	fb := &fakeBackend{setPartErr: ErrUnsupported}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.SetPart(0); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("SetPart: err=%v, want ErrUnsupported", err)
+	}
+}
+
+func TestSetPartMode_PropagatesUnsupported(t *testing.T) {
+	fb := &fakeBackend{setPartModeErr: ErrUnsupported}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.SetPartMode(0); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("SetPartMode: err=%v, want ErrUnsupported", err)
+	}
+}
+
+func TestSetOutlineState_PropagatesUnsupported(t *testing.T) {
+	fb := &fakeBackend{setOutlineStateErr: ErrUnsupported}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.SetOutlineState(false, 0, 0, false); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("SetOutlineState: err=%v, want ErrUnsupported", err)
+	}
+}
+
 func TestPartMethods_AfterCloseErrors(t *testing.T) {
 	cases := []struct {
 		name string

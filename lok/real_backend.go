@@ -161,11 +161,11 @@ func (realBackend) DocumentGetParts(d documentHandle) int {
 func (realBackend) DocumentGetPart(d documentHandle) int {
 	return lokc.DocumentGetPart(mustDoc(d).d)
 }
-func (realBackend) DocumentSetPart(d documentHandle, n int) {
-	lokc.DocumentSetPart(mustDoc(d).d, n)
+func (realBackend) DocumentSetPart(d documentHandle, n int) error {
+	return mapLokErr(lokc.DocumentSetPart(mustDoc(d).d, n))
 }
-func (realBackend) DocumentSetPartMode(d documentHandle, mode int) {
-	lokc.DocumentSetPartMode(mustDoc(d).d, mode)
+func (realBackend) DocumentSetPartMode(d documentHandle, mode int) error {
+	return mapLokErr(lokc.DocumentSetPartMode(mustDoc(d).d, mode))
 }
 func (realBackend) DocumentGetPartName(d documentHandle, n int) string {
 	return lokc.DocumentGetPartName(mustDoc(d).d, n)
@@ -182,8 +182,8 @@ func (realBackend) DocumentGetPartPageRectangles(d documentHandle) string {
 func (realBackend) DocumentGetDocumentSize(d documentHandle) (int64, int64) {
 	return lokc.DocumentGetDocumentSize(mustDoc(d).d)
 }
-func (realBackend) DocumentSetOutlineState(d documentHandle, column bool, level, index int, hidden bool) {
-	lokc.DocumentSetOutlineState(mustDoc(d).d, column, level, index, hidden)
+func (realBackend) DocumentSetOutlineState(d documentHandle, column bool, level, index int, hidden bool) error {
+	return mapLokErr(lokc.DocumentSetOutlineState(mustDoc(d).d, column, level, index, hidden))
 }
 
 func (realBackend) DocumentInitializeForRendering(d documentHandle, args string) {
