@@ -259,31 +259,32 @@ func TestPostUnoCommand_ForwardsNotifyTrue(t *testing.T) {
 	}
 }
 
-// PR B (vtable-detect): the public methods must propagate the
-// backend ErrUnsupported untouched so callers on stripped LO builds
-// can react instead of seeing silent success.
-
-func TestPostKeyEvent_PropagatesUnsupported(t *testing.T) {
-	fb := &fakeBackend{postKeyEventErr: ErrUnsupported}
-	_, doc := loadFakeDoc(t, fb)
-	if err := doc.PostKeyEvent(KeyEventInput, 'a', 0); !errors.Is(err, ErrUnsupported) {
-		t.Errorf("PostKeyEvent: err=%v, want ErrUnsupported", err)
+// TestInputSetters_PropagateUnsupported asserts every widened input
+// method forwards the backend ErrUnsupported untouched, so callers
+// on stripped LO builds (vtable slot NULL) see the unsupported
+// signal instead of silent success.
+func TestInputSetters_PropagateUnsupported(t *testing.T) {
+	cases := []struct {
+		name   string
+		inject func(*fakeBackend)
+		call   func(*Document) error
+	}{
+		{"PostKeyEvent", func(f *fakeBackend) { f.postKeyEventErr = ErrUnsupported },
+			func(d *Document) error { return d.PostKeyEvent(KeyEventInput, 'a', 0) }},
+		{"PostMouseEvent", func(f *fakeBackend) { f.postMouseEventErr = ErrUnsupported },
+			func(d *Document) error { return d.PostMouseEvent(MouseButtonDown, 0, 0, 1, MouseLeft, 0) }},
+		{"PostUnoCommand", func(f *fakeBackend) { f.postUnoCommandErr = ErrUnsupported },
+			func(d *Document) error { return d.PostUnoCommand(".uno:Bold", "", false) }},
 	}
-}
-
-func TestPostMouseEvent_PropagatesUnsupported(t *testing.T) {
-	fb := &fakeBackend{postMouseEventErr: ErrUnsupported}
-	_, doc := loadFakeDoc(t, fb)
-	if err := doc.PostMouseEvent(MouseButtonDown, 0, 0, 1, MouseLeft, 0); !errors.Is(err, ErrUnsupported) {
-		t.Errorf("PostMouseEvent: err=%v, want ErrUnsupported", err)
-	}
-}
-
-func TestPostUnoCommand_PropagatesUnsupported(t *testing.T) {
-	fb := &fakeBackend{postUnoCommandErr: ErrUnsupported}
-	_, doc := loadFakeDoc(t, fb)
-	if err := doc.PostUnoCommand(".uno:Bold", "", false); !errors.Is(err, ErrUnsupported) {
-		t.Errorf("PostUnoCommand: err=%v, want ErrUnsupported", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fb := &fakeBackend{}
+			tc.inject(fb)
+			_, doc := loadFakeDoc(t, fb)
+			if err := tc.call(doc); !errors.Is(err, ErrUnsupported) {
+				t.Errorf("err=%v, want ErrUnsupported", err)
+			}
+		})
 	}
 }
 

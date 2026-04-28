@@ -105,15 +105,15 @@ type fakeBackend struct {
 	// Vtable-detect injection points (PR B): fakes assert that the
 	// public lok methods propagate the lokc error untouched. Default
 	// nil so existing tests stay unaffected.
-	postKeyEventErr          error
-	postMouseEventErr        error
-	postUnoCommandErr        error
-	destroyViewErr           error
-	setViewErr               error
-	setViewLanguageErr       error
-	setViewReadOnlyErr       error
-	setAccessibilityStateErr error
-	setViewTimezoneErr       error
+	postKeyEventErr           error
+	postMouseEventErr         error
+	postUnoCommandErr         error
+	destroyViewErr            error
+	setViewErr                error
+	setViewLanguageErr        error
+	setViewReadOnlyErr        error
+	setAccessibilityStateErr  error
+	setViewTimezoneErr        error
 	setPartErr                error
 	setPartModeErr            error
 	setOutlineStateErr        error

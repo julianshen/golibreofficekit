@@ -218,31 +218,32 @@ func TestSetOutlineState_PassesParams(t *testing.T) {
 	}
 }
 
-// PR B (vtable-detect): the public methods must propagate the
-// backend ErrUnsupported untouched so callers on stripped LO builds
-// can react instead of seeing silent success.
-
-func TestSetPart_PropagatesUnsupported(t *testing.T) {
-	fb := &fakeBackend{setPartErr: ErrUnsupported}
-	_, doc := loadFakeDoc(t, fb)
-	if err := doc.SetPart(0); !errors.Is(err, ErrUnsupported) {
-		t.Errorf("SetPart: err=%v, want ErrUnsupported", err)
+// TestPartSetters_PropagateUnsupported asserts every widened part
+// method forwards the backend ErrUnsupported untouched, so callers
+// on stripped LO builds (vtable slot NULL) see the unsupported
+// signal instead of silent success.
+func TestPartSetters_PropagateUnsupported(t *testing.T) {
+	cases := []struct {
+		name   string
+		inject func(*fakeBackend)
+		call   func(*Document) error
+	}{
+		{"SetPart", func(f *fakeBackend) { f.setPartErr = ErrUnsupported },
+			func(d *Document) error { return d.SetPart(0) }},
+		{"SetPartMode", func(f *fakeBackend) { f.setPartModeErr = ErrUnsupported },
+			func(d *Document) error { return d.SetPartMode(0) }},
+		{"SetOutlineState", func(f *fakeBackend) { f.setOutlineStateErr = ErrUnsupported },
+			func(d *Document) error { return d.SetOutlineState(false, 0, 0, false) }},
 	}
-}
-
-func TestSetPartMode_PropagatesUnsupported(t *testing.T) {
-	fb := &fakeBackend{setPartModeErr: ErrUnsupported}
-	_, doc := loadFakeDoc(t, fb)
-	if err := doc.SetPartMode(0); !errors.Is(err, ErrUnsupported) {
-		t.Errorf("SetPartMode: err=%v, want ErrUnsupported", err)
-	}
-}
-
-func TestSetOutlineState_PropagatesUnsupported(t *testing.T) {
-	fb := &fakeBackend{setOutlineStateErr: ErrUnsupported}
-	_, doc := loadFakeDoc(t, fb)
-	if err := doc.SetOutlineState(false, 0, 0, false); !errors.Is(err, ErrUnsupported) {
-		t.Errorf("SetOutlineState: err=%v, want ErrUnsupported", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fb := &fakeBackend{}
+			tc.inject(fb)
+			_, doc := loadFakeDoc(t, fb)
+			if err := tc.call(doc); !errors.Is(err, ErrUnsupported) {
+				t.Errorf("err=%v, want ErrUnsupported", err)
+			}
+		})
 	}
 }
 

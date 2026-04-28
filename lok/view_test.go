@@ -197,55 +197,38 @@ func TestSetViewTimezone_Records(t *testing.T) {
 	}
 }
 
-// PR B (vtable-detect): the public methods must propagate the
-// backend ErrUnsupported untouched so callers on stripped LO builds
-// can react instead of seeing silent success.
-
-func TestDestroyView_PropagatesUnsupported(t *testing.T) {
-	fb := &fakeBackend{destroyViewErr: ErrUnsupported}
-	_, doc := loadFakeDoc(t, fb)
-	if err := doc.DestroyView(0); !errors.Is(err, ErrUnsupported) {
-		t.Errorf("DestroyView: err=%v, want ErrUnsupported", err)
+// TestViewSetters_PropagateUnsupported asserts every widened view
+// method forwards the backend ErrUnsupported untouched, so callers
+// on stripped LO builds (vtable slot NULL) see the unsupported
+// signal instead of silent success.
+func TestViewSetters_PropagateUnsupported(t *testing.T) {
+	cases := []struct {
+		name   string
+		inject func(*fakeBackend)
+		call   func(*Document) error
+	}{
+		{"DestroyView", func(f *fakeBackend) { f.destroyViewErr = ErrUnsupported },
+			func(d *Document) error { return d.DestroyView(0) }},
+		{"SetView", func(f *fakeBackend) { f.setViewErr = ErrUnsupported },
+			func(d *Document) error { return d.SetView(0) }},
+		{"SetViewLanguage", func(f *fakeBackend) { f.setViewLanguageErr = ErrUnsupported },
+			func(d *Document) error { return d.SetViewLanguage(0, "x") }},
+		{"SetViewReadOnly", func(f *fakeBackend) { f.setViewReadOnlyErr = ErrUnsupported },
+			func(d *Document) error { return d.SetViewReadOnly(0, true) }},
+		{"SetAccessibilityState", func(f *fakeBackend) { f.setAccessibilityStateErr = ErrUnsupported },
+			func(d *Document) error { return d.SetAccessibilityState(0, true) }},
+		{"SetViewTimezone", func(f *fakeBackend) { f.setViewTimezoneErr = ErrUnsupported },
+			func(d *Document) error { return d.SetViewTimezone(0, "UTC") }},
 	}
-}
-
-func TestSetView_PropagatesUnsupported(t *testing.T) {
-	fb := &fakeBackend{setViewErr: ErrUnsupported}
-	_, doc := loadFakeDoc(t, fb)
-	if err := doc.SetView(0); !errors.Is(err, ErrUnsupported) {
-		t.Errorf("SetView: err=%v, want ErrUnsupported", err)
-	}
-}
-
-func TestSetViewLanguage_PropagatesUnsupported(t *testing.T) {
-	fb := &fakeBackend{setViewLanguageErr: ErrUnsupported}
-	_, doc := loadFakeDoc(t, fb)
-	if err := doc.SetViewLanguage(0, "x"); !errors.Is(err, ErrUnsupported) {
-		t.Errorf("SetViewLanguage: err=%v, want ErrUnsupported", err)
-	}
-}
-
-func TestSetViewReadOnly_PropagatesUnsupported(t *testing.T) {
-	fb := &fakeBackend{setViewReadOnlyErr: ErrUnsupported}
-	_, doc := loadFakeDoc(t, fb)
-	if err := doc.SetViewReadOnly(0, true); !errors.Is(err, ErrUnsupported) {
-		t.Errorf("SetViewReadOnly: err=%v, want ErrUnsupported", err)
-	}
-}
-
-func TestSetAccessibilityState_PropagatesUnsupported(t *testing.T) {
-	fb := &fakeBackend{setAccessibilityStateErr: ErrUnsupported}
-	_, doc := loadFakeDoc(t, fb)
-	if err := doc.SetAccessibilityState(0, true); !errors.Is(err, ErrUnsupported) {
-		t.Errorf("SetAccessibilityState: err=%v, want ErrUnsupported", err)
-	}
-}
-
-func TestSetViewTimezone_PropagatesUnsupported(t *testing.T) {
-	fb := &fakeBackend{setViewTimezoneErr: ErrUnsupported}
-	_, doc := loadFakeDoc(t, fb)
-	if err := doc.SetViewTimezone(0, "UTC"); !errors.Is(err, ErrUnsupported) {
-		t.Errorf("SetViewTimezone: err=%v, want ErrUnsupported", err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fb := &fakeBackend{}
+			tc.inject(fb)
+			_, doc := loadFakeDoc(t, fb)
+			if err := tc.call(doc); !errors.Is(err, ErrUnsupported) {
+				t.Errorf("err=%v, want ErrUnsupported", err)
+			}
+		})
 	}
 }
 
