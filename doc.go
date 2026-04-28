@@ -1,8 +1,9 @@
 // Package golibreofficekit is a Go binding for LibreOfficeKit (LOK),
 // LibreOffice's C ABI for in-process document loading, rendering, and
-// editing.
+// editing of Writer, Calc, Impress, and Draw documents.
 //
-// This root package holds no API; the public surface will live under
-// the lok package added in Phase 2. See docs/superpowers/specs/ for the
-// design, docs/superpowers/plans/ for the implementation plans.
+// The root module path holds no API. Import the public binding from
+// the [github.com/julianshen/golibreofficekit/lok] subpackage, and see
+// the cmd/lokconv and cmd/lokmd command-line tools for end-to-end
+// examples.
 package golibreofficekit
