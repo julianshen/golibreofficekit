@@ -54,9 +54,9 @@ type backend interface {
 	DocumentRenderSearchResult(d documentHandle, query string) (buf []byte, pxW, pxH int, ok bool)
 	DocumentRenderShapeSelection(d documentHandle) []byte
 
-	DocumentPostKeyEvent(d documentHandle, typ, charCode, keyCode int)
-	DocumentPostMouseEvent(d documentHandle, typ, x, y, count, buttons, mods int)
-	DocumentPostUnoCommand(d documentHandle, cmd, args string, notifyWhenFinished bool)
+	DocumentPostKeyEvent(d documentHandle, typ, charCode, keyCode int) error
+	DocumentPostMouseEvent(d documentHandle, typ, x, y, count, buttons, mods int) error
+	DocumentPostUnoCommand(d documentHandle, cmd, args string, notifyWhenFinished bool) error
 
 	DocumentSetTextSelection(d documentHandle, typ, x, y int) error
 	DocumentResetSelection(d documentHandle) error

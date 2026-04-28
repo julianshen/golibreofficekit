@@ -102,6 +102,13 @@ type fakeBackend struct {
 	lastUnoArgs     string
 	lastUnoNotify   bool
 
+	// Vtable-detect injection points (PR B): fakes assert that the
+	// public lok methods propagate the lokc error untouched. Default
+	// nil so existing tests stay unaffected.
+	postKeyEventErr   error
+	postMouseEventErr error
+	postUnoCommandErr error
+
 	lastGetTextSelectionMime     string
 	lastSelectionTypeAndTextMime string
 	selectionText                string
@@ -633,23 +640,26 @@ func (f *fakeBackend) DocumentRenderShapeSelection(documentHandle) []byte {
 	return f.shapeSelection
 }
 
-func (f *fakeBackend) DocumentPostKeyEvent(_ documentHandle, typ, charCode, keyCode int) {
+func (f *fakeBackend) DocumentPostKeyEvent(_ documentHandle, typ, charCode, keyCode int) error {
 	f.lastKeyType = typ
 	f.lastCharCode = charCode
 	f.lastKeyCode = keyCode
+	return f.postKeyEventErr
 }
-func (f *fakeBackend) DocumentPostMouseEvent(_ documentHandle, typ, x, y, count, buttons, mods int) {
+func (f *fakeBackend) DocumentPostMouseEvent(_ documentHandle, typ, x, y, count, buttons, mods int) error {
 	f.lastMouseType = typ
 	f.lastMouseX = x
 	f.lastMouseY = y
 	f.lastMouseCount = count
 	f.lastMouseButton = buttons
 	f.lastMouseMods = mods
+	return f.postMouseEventErr
 }
-func (f *fakeBackend) DocumentPostUnoCommand(_ documentHandle, cmd, args string, notify bool) {
+func (f *fakeBackend) DocumentPostUnoCommand(_ documentHandle, cmd, args string, notify bool) error {
 	f.lastUnoCmd = cmd
 	f.lastUnoArgs = args
 	f.lastUnoNotify = notify
+	return f.postUnoCommandErr
 }
 
 func (f *fakeBackend) DocumentSetTextSelection(_ documentHandle, typ, x, y int) error {

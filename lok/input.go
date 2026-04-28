@@ -146,7 +146,9 @@ const (
 // LOK exposes no synchronous result for input events; mutations become
 // observable only through a registered document callback. Values of
 // charCode or keyCode outside int32 return *LOKError{Op:"PostKeyEvent"}
-// without invoking LOK.
+// without invoking LOK. Returns ErrUnsupported when the LOK build does
+// not expose postKeyEvent (vtable slot NULL) — silent no-op was
+// indistinguishable from success on stripped LO builds.
 func (d *Document) PostKeyEvent(typ KeyEventType, charCode, keyCode int) error {
 	if err := requireInt32Key("PostKeyEvent", charCode, keyCode); err != nil {
 		return err
@@ -156,8 +158,7 @@ func (d *Document) PostKeyEvent(typ KeyEventType, charCode, keyCode int) error {
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentPostKeyEvent(d.h, int(typ), charCode, keyCode)
-	return nil
+	return d.office.be.DocumentPostKeyEvent(d.h, int(typ), charCode, keyCode)
 }
 
 // PostMouseEvent posts a mouse event at twip coordinates (x, y).
@@ -168,7 +169,8 @@ func (d *Document) PostKeyEvent(typ KeyEventType, charCode, keyCode int) error {
 // LOK exposes no synchronous result for input events; mutations become
 // observable only through a registered document callback. Values of
 // x or y outside int32 return *LOKError{Op:"PostMouseEvent"} without
-// invoking LOK.
+// invoking LOK. Returns ErrUnsupported when the LOK build does not
+// expose postMouseEvent (vtable slot NULL).
 func (d *Document) PostMouseEvent(typ MouseEventType, x, y int64, count int, buttons MouseButton, mods Modifier) error {
 	if err := requireInt32XY("PostMouseEvent", x, y); err != nil {
 		return err
@@ -178,9 +180,8 @@ func (d *Document) PostMouseEvent(typ MouseEventType, x, y int64, count int, but
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentPostMouseEvent(d.h, int(typ), int(x), int(y),
+	return d.office.be.DocumentPostMouseEvent(d.h, int(typ), int(x), int(y),
 		count, int(buttons), int(mods))
-	return nil
 }
 
 // PostUnoCommand dispatches a .uno:* command to the active view.
@@ -189,15 +190,15 @@ func (d *Document) PostMouseEvent(typ MouseEventType, x, y int64, count int, but
 // the flag is forwarded verbatim but results, and any dispatcher-side
 // failures, are observable only through a registered document
 // callback — LOK exposes no synchronous error channel for UNO
-// dispatch.
+// dispatch. Returns ErrUnsupported when the LOK build does not
+// expose postUnoCommand (vtable slot NULL).
 func (d *Document) PostUnoCommand(cmd, argsJSON string, notifyWhenFinished bool) error {
 	unlock, err := d.guard()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	d.office.be.DocumentPostUnoCommand(d.h, cmd, argsJSON, notifyWhenFinished)
-	return nil
+	return d.office.be.DocumentPostUnoCommand(d.h, cmd, argsJSON, notifyWhenFinished)
 }
 
 // requireInt32XY returns *LOKError if x or y exceeds int32 range.

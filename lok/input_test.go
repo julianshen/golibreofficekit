@@ -259,6 +259,34 @@ func TestPostUnoCommand_ForwardsNotifyTrue(t *testing.T) {
 	}
 }
 
+// PR B (vtable-detect): the public methods must propagate the
+// backend ErrUnsupported untouched so callers on stripped LO builds
+// can react instead of seeing silent success.
+
+func TestPostKeyEvent_PropagatesUnsupported(t *testing.T) {
+	fb := &fakeBackend{postKeyEventErr: ErrUnsupported}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.PostKeyEvent(KeyEventInput, 'a', 0); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("PostKeyEvent: err=%v, want ErrUnsupported", err)
+	}
+}
+
+func TestPostMouseEvent_PropagatesUnsupported(t *testing.T) {
+	fb := &fakeBackend{postMouseEventErr: ErrUnsupported}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.PostMouseEvent(MouseButtonDown, 0, 0, 1, MouseLeft, 0); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("PostMouseEvent: err=%v, want ErrUnsupported", err)
+	}
+}
+
+func TestPostUnoCommand_PropagatesUnsupported(t *testing.T) {
+	fb := &fakeBackend{postUnoCommandErr: ErrUnsupported}
+	_, doc := loadFakeDoc(t, fb)
+	if err := doc.PostUnoCommand(".uno:Bold", "", false); !errors.Is(err, ErrUnsupported) {
+		t.Errorf("PostUnoCommand: err=%v, want ErrUnsupported", err)
+	}
+}
+
 func TestInputMethods_AfterCloseErrors(t *testing.T) {
 	cases := []struct {
 		name string
