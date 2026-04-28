@@ -287,7 +287,6 @@ func TestLoad_FallsBackToBackendErrorWhenNoLODetail(t *testing.T) {
 	if lokErr.Detail == "" {
 		t.Error("Detail empty; want fallback message including the backend error")
 	}
-	// Original error must still be reachable for errors.Is.
 	if !errors.Is(err, synth) {
 		t.Errorf("errors.Is(synth) failed; chain lost the cause: %v", err)
 	}
